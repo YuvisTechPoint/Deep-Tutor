@@ -1,0 +1,6 @@
+short_description: "使用 HiDream-O1-Image（外部 CUDA 服务）生成教学或示意图像。"
+when_to_use: "用户需要从文字生成新图像、课堂插图或可视化讲解时使用；不用于分析用户上传的照片。"
+input_format: "详细的英文画面描述（构图、光影、主体）。可选宽/高（256–2048）与随机种子。"
+guideline: "提示词尽量写出画面结构与风格；需预先配置 HIDREAM_SERVICE_URL 指向上游的 Flask 推理服务。"
+note: "推理不在 DeepTutor 进程内——请先在 GPU 环境启动 HiDream 的 app.py。"
+phase: "generation"

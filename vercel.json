@@ -1,0 +1,31 @@
+{
+  "buildCommand": "cd web && npm ci && npm run build",
+  "devCommand": "cd web && npm run dev",
+  "installCommand": "npm ci --prefer-offline --no-audit",
+  "env": {
+    "NODE_OPTIONS": "--max-old-space-size=4096"
+  },
+  "functions": {
+    "api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "http://localhost:8001/api/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, immutable"
+        }
+      ]
+    }
+  ]
+}

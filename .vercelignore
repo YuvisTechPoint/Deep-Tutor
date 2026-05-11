@@ -1,0 +1,56 @@
+# Development files
+*.md
+!README.md
+!CONTRIBUTING.md
+
+# Environment files
+.env.local
+.env.development
+.env.test
+.env.example
+
+# Testing
+tests/
+.playwright/
+playwright.config.ts
+web/app/**/page.test.tsx
+
+# Git
+.git
+.gitignore
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+npm-debug.log
+yarn.lock
+yarn-error.log
+pnpm-lock.yaml
+
+# Backend (when deploying frontend-only)
+deeptutor/
+pyproject.toml
+requirements/
+scripts/
+tests/
+*.py
+
+# Unnecessary assets
+assets/README/
+documents/
+data/

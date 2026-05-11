@@ -1,0 +1,6 @@
+short_description: "Generate teaching or illustration images with HiDream-O1-Image (external CUDA server)."
+when_to_use: "Use when the user asks for a new image from scratch (text-to-image), diagrams for lectures, or visual explanations — not for analyzing an uploaded photo."
+input_format: "A detailed English prompt (composition, lighting, subjects). Optional width/height (256–2048) and seed."
+guideline: "Prefer concrete visual detail; HiDream quality improves with explicit layout and style cues. Requires HIDREAM_SERVICE_URL pointing at the upstream Flask app."
+note: "Does not run inside DeepTutor — start HiDream's app.py on a GPU machine first."
+phase: "generation"
