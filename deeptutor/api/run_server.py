@@ -45,29 +45,19 @@ def main() -> None:
     configure_logging()
     backend_port = get_backend_port(project_root)
 
-    # Configure reload_excludes to skip directories that shouldn't trigger reloads
-    # Use absolute paths to ensure they're properly resolved
-    reload_excludes = [
-        str(project_root / "venv"),  # Virtual environment
-        str(project_root / ".venv"),  # Virtual environment (alternative name)
-        str(project_root / "data"),  # Data directory (includes knowledge_bases, user data, logs)
-        str(project_root / "node_modules"),  # Node modules (if any at root)
-        str(project_root / "web" / "node_modules"),  # Web node modules
-        str(project_root / "web" / ".next"),  # Next.js build
-        str(project_root / ".git"),  # Git directory
-        str(project_root / "scripts"),  # Scripts directory - don't reload on launcher changes
+    # Configure reload to watch only source code directories
+    # This prevents unnecessary reloads from cache/build artifacts
+    reload_dirs = [
+        str(project_root / "deeptutor"),  # Main package
     ]
 
-    # Filter out non-existent directories to avoid warnings
-    reload_excludes = [d for d in reload_excludes if Path(d).exists()]
-
-    # Start uvicorn server with reload enabled
+    # Start uvicorn server with reload enabled and restricted watch dirs
     uvicorn.run(
         "deeptutor.api.main:app",
         host="0.0.0.0",
         port=backend_port,
         reload=True,
-        reload_excludes=reload_excludes,
+        reload_dirs=reload_dirs,
         log_level="info",
         access_log=False,
     )
