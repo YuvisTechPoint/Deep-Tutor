@@ -1,56 +1,56 @@
-# Development files
+# Files excluded from the Vercel deployment upload (smaller bundle, faster builds).
+#
+# IMPORTANT: Do NOT list `deeptutor/`, `pyproject.toml`, `requirements/`, or `*.py`
+# if you deploy the FastAPI backend on Vercel — the Python app must be present.
+# For a Next.js–only deploy, set Project Root Directory to `web` in the Vercel
+# dashboard so only the frontend is uploaded; this file still applies from repo root.
+
+# Development & docs (keep README for npm/package metadata if needed)
 *.md
 !README.md
 !CONTRIBUTING.md
 
-# Environment files
+# Environment (never ship secrets)
 .env.local
 .env.development
 .env.test
-.env.example
 
-# Testing
+# Local / CI testing (not needed at runtime)
 tests/
 .playwright/
 playwright.config.ts
 web/app/**/page.test.tsx
 
-# Git
+# Git metadata
 .git
-.gitignore
 
-# Build outputs
+# Build outputs (regenerated on Vercel)
 dist/
 build/
 coverage/
+web/.next/
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Dependencies
+# JS deps reinstalled via installCommand
 node_modules/
+web/node_modules/
 npm-debug.log
 yarn.lock
 yarn-error.log
 pnpm-lock.yaml
 
-# Backend (when deploying frontend-only)
-deeptutor/
-pyproject.toml
-requirements/
-scripts/
-tests/
-*.py
-
-# Unnecessary assets
+# Large optional trees (adjust if your deploy needs them)
 assets/README/
 documents/
 data/
+
+# Dev tooling scripts (not imported by deeptutor at runtime)
+scripts/

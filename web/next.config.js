@@ -148,14 +148,9 @@ const nextConfig = {
   // Transpile mermaid and related packages for proper ESM handling
   transpilePackages: ["mermaid"],
 
-  // Enable SWR caching for better performance
-  swcMinify: true,
-
-  // Optimize images
+  // Optimize images with Next.js 16 format
   images: {
-    optimization: {
-      formats: ['image/avif', 'image/webp'],
-    },
+    formats: ['image/avif', 'image/webp'],
   },
 
   // Production optimizations
