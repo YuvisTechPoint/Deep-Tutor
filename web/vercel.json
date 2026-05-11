@@ -3,7 +3,6 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
-  "functions": {},
   "env": {
     "NODE_OPTIONS": "--max-old-space-size=4096"
   }

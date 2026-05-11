@@ -4,8 +4,9 @@
 # `web/package.json` + `web/package-lock.json` + `web/` sources (do not ignore `web/`).
 #
 # Vercel setup (pick one):
-#   A) Repo root: keep root `vercel.json` (uses `cd web && npm ci` / `npm run build`).
-#   B) Root Directory = `web` in Project Settings: Vercel uses `web/vercel.json` instead.
+#   A) Repo root: root `vercel.json` with `cd web && npm ci` / `npm run build`.
+#   B) Root Directory = `web`: use `web/vercel.json` (no `cd web`).
+#   C) GitHub Actions: `.github/workflows/vercel-production.yml` deploys the pushed commit (needs VERCEL_* secrets).
 
 # Documentation (keep README only for package metadata)
 *.md
@@ -68,7 +69,6 @@ coverage/
 playwright.config.ts
 web/app/**/page.test.tsx
 web/tests/
-.github/
 .gitlab-ci.yml
 .travis.yml
 Jenkinsfile
