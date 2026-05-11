@@ -161,6 +161,7 @@ const nextConfig = {
 
   // Turbopack configuration (used when running `npm run dev:turbo`)
   turbopack: {
+    root: "../",  // Explicitly set root to resolve monorepo correctly
     resolveAlias: {
       // Fix for mermaid's cytoscape dependency - use CJS version
       cytoscape: "cytoscape/dist/cytoscape.cjs.js",
