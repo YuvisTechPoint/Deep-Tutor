@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "npm ci --prefer-offline --no-audit",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
+  "functions": {},
   "env": {
     "NODE_OPTIONS": "--max-old-space-size=4096"
   }
