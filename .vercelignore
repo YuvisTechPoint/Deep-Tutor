@@ -1,7 +1,7 @@
 # Files excluded from the Vercel deployment upload (smaller bundle, faster builds).
 #
 # FRONTEND-ONLY: excludes Python backend to shrink uploads. Next.js must still receive
-# `web/package.json` + `web/package-lock.json` + `web/` sources (do not ignore `web/`).
+# root `package.json` (Next shim for Vercel) + `web/package.json` + `web/package-lock.json` + `web/`.
 #
 # Vercel setup (pick one):
 #   A) Repo root: root `vercel.json` with `cd web && npm ci` / `npm run build`.

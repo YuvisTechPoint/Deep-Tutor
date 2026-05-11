@@ -1,0 +1,10 @@
+{
+  "name": "deeptutor-monorepo",
+  "private": true,
+  "description": "Vercel builds the Next app in web/. This file exists so Vercel can detect next/react at the repo root when Root Directory is unset.",
+  "dependencies": {
+    "next": "^16.2.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
