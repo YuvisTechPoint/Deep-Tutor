@@ -4,6 +4,8 @@
 
 # DeepTutor: Agent-Native Personalized Tutoring Platform
 
+**Developed by [YuvisTechPoint](https://github.com/YuvisTechPoint) (Yuvraj Prasad)**
+
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
@@ -14,9 +16,15 @@
 
 ---
 
+> **Project Owner:** [YuvisTechPoint (Yuvraj Prasad)](https://github.com/YuvisTechPoint)  
+> **Repository:** [Deep-Tutor](https://github.com/YuvisTechPoint/Deep-Tutor)  
+> **License:** Apache 2.0
+
+---
+
 ## Overview
 
-DeepTutor is an advanced, agent-native intelligent tutoring platform that combines conversational AI with multi-agent reasoning to deliver personalized learning experiences. Built on a flexible two-layer plugin model (Tools and Capabilities), DeepTutor supports six distinct operational modes within a unified workspace, persistent memory systems, autonomous tutor agents (TutorBots), and comprehensive knowledge base management.
+DeepTutor is an advanced, agent-native intelligent tutoring platform developed by YuvisTechPoint that combines conversational AI with multi-agent reasoning to deliver personalized learning experiences. Built on a flexible two-layer plugin model (Tools and Capabilities), DeepTutor supports six distinct operational modes within a unified workspace, persistent memory systems, autonomous tutor agents (TutorBots), and comprehensive knowledge base management.
 
 The platform is designed for individual learners, educational institutions, and organizations seeking to deploy AI-driven tutoring at scale. All features are accessible through three entry points: a web-based interface, command-line interface (CLI), and Python SDK.
 
@@ -65,8 +73,8 @@ All components are registered through discovery mechanisms and can be extended w
 **Option 1: Guided Setup (Recommended)**
 
 ```bash
-git clone https://github.com/HKUDS/DeepTutor.git
-cd DeepTutor
+git clone https://github.com/YuvisTechPoint/Deep-Tutor.git
+cd Deep-Tutor
 
 # Create Python environment
 python3 -m venv .venv
@@ -81,8 +89,8 @@ python scripts/start_tour.py
 **Option 2: Manual Installation**
 
 ```bash
-git clone https://github.com/HKUDS/DeepTutor.git
-cd DeepTutor
+git clone https://github.com/YuvisTechPoint/Deep-Tutor.git
+cd Deep-Tutor
 
 # Create and activate environment
 python3 -m venv .venv
@@ -236,9 +244,11 @@ Licensed under the [Apache License 2.0](LICENSE).
 
 ## Credits & Attribution
 
-**Creator & Maintainer:** [YuvisTechPoint](https://github.com/YuvisTechPoint)
+**Project Creator & Maintainer:** [YuvisTechPoint (Yuvraj Prasad)](https://github.com/YuvisTechPoint)
 
-Built with the following open-source projects:
+DeepTutor is the sole creation of YuvisTechPoint and represents a comprehensive intelligent tutoring platform built from the ground up. All code, architecture, and design decisions are attributed to YuvisTechPoint.
+
+**Built with the following open-source projects:**
 - [nanobot](https://github.com/HKUDS/nanobot) — Lightweight agent engine
 - [LlamaIndex](https://github.com/run-llama/llama_index) — RAG and indexing framework
 - [ManimCat](https://github.com/Wing900/ManimCat) — Mathematical animation generation
