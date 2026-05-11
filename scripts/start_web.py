@@ -551,6 +551,7 @@ def main() -> None:
     frontend_env["NEXT_PUBLIC_API_BASE"] = api_base
     frontend_env["AUTH_ENABLED"] = "true" if auth_enabled else "false"
     frontend_env["NEXT_PUBLIC_AUTH_ENABLED"] = "true" if auth_enabled else "false"
+    frontend_env["NODE_OPTIONS"] = "--max-old-space-size=8192"  # Ensure sufficient memory for Next.js dev
     if razorpay_pub.strip():
         frontend_env["NEXT_PUBLIC_RAZORPAY_KEY_ID"] = razorpay_pub.strip()
     frontend_env["PYTHONIOENCODING"] = "utf-8:replace"
