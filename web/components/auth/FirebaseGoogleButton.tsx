@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { isFirebaseConfigured, signInWithGoogleAndGetIdToken } from "@/lib/firebase-client";
 import { loginWithFirebaseIdToken } from "@/lib/auth";
+import { DEFAULT_POST_LOGIN_PATH, sanitizeInternalNextPath } from "@/lib/auth-routes";
 
 const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
 
@@ -12,7 +13,7 @@ interface FirebaseGoogleButtonProps {
 }
 
 export function FirebaseGoogleButton({
-  nextPath = "/",
+  nextPath = DEFAULT_POST_LOGIN_PATH,
   onDone,
 }: FirebaseGoogleButtonProps) {
   const [busy, setBusy] = useState(false);
@@ -34,7 +35,7 @@ export function FirebaseGoogleButton({
         return;
       }
       onDone?.();
-      window.location.assign(nextPath);
+      window.location.assign(sanitizeInternalNextPath(nextPath));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Firebase sign-in failed");
       setBusy(false);

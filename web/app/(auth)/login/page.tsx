@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FirebaseGoogleButton } from "@/components/auth/FirebaseGoogleButton";
 import { login, fetchAuthStatus, checkIsFirstUser } from "@/lib/auth";
+import { sanitizeInternalNextPath } from "@/lib/auth-routes";
 import {
   assignMarketingSignup,
   marketingLoginUrl,
@@ -13,7 +14,8 @@ import {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/";
+  const nextParam = searchParams.get("next");
+  const next = useMemo(() => sanitizeInternalNextPath(nextParam), [nextParam]);
 
   const registered = searchParams.get("registered") === "1";
 

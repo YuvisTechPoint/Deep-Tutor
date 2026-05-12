@@ -405,7 +405,19 @@ def update_milestone_status(milestone_id: str, status: str) -> dict[str, Any]:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         _save_progress(data)
-    return data[milestone_id]
+    record = data[milestone_id]
+    try:
+        from deeptutor.analytics.emit import emit_domain_event
+
+        emit_domain_event(
+            "MilestoneStatusUpdated",
+            subject_type="Milestone",
+            subject_id=milestone_id,
+            payload={"status": status, "record": record, "source": "planner"},
+        )
+    except Exception:
+        logger.debug("domain event emit failed for milestone", exc_info=True)
+    return record
 
 
 def _gamification_signal(trigger_actions: list[str]) -> dict[str, Any]:
@@ -453,6 +465,32 @@ def list_plan_templates() -> list[dict[str, Any]]:
         }
         for plan_id, plan in _PLAN_TEMPLATES.items()
     ]
+
+
+def iter_milestone_prerequisite_edges() -> list[dict[str, Any]]:
+    """Return ordered milestone pairs (from_id -> to_id) within each phase.
+
+    Used to populate Neo4j ``(:Milestone)-[:NEXT]->(:Milestone)`` edges so the
+    graph API can suggest the next roadmap step after a completed milestone.
+    """
+    edges: list[dict[str, Any]] = []
+    for plan_id, plan in _PLAN_TEMPLATES.items():
+        for phase in plan["phases"]:
+            pid = str(phase["id"])
+            prev: str | None = None
+            for m in phase["milestones"]:
+                mid = str(m["id"])
+                if prev is not None:
+                    edges.append(
+                        {
+                            "plan_id": plan_id,
+                            "phase_id": pid,
+                            "from_id": prev,
+                            "to_id": mid,
+                        }
+                    )
+                prev = mid
+    return edges
 
 
 def plan_signature(profile: dict[str, Any]) -> str:

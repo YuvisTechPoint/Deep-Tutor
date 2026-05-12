@@ -26,6 +26,7 @@ import {
   submitPracticeQuiz,
   type PracticeQuestion,
 } from "@/lib/workspace-api";
+import { OfflineQueuedError } from "@/lib/offline-queue";
 
 type QuizState = "idle" | "in_progress" | "show_result" | "completed";
 type Difficulty = "easy" | "medium" | "hard";
@@ -232,14 +233,24 @@ export default function PracticePage() {
         });
         setState("completed");
       } catch (e) {
-        setError(
-          e instanceof Error
-            ? e.message
-            : t("practice.err_submit", {
-                defaultValue: "Failed to submit quiz.",
-              }),
-        );
-        setState("idle");
+        if (e instanceof OfflineQueuedError) {
+          setError(
+            t("practice.offline_queued", {
+              defaultValue:
+                "You appear offline — your score was queued and will sync when you are back online.",
+            }),
+          );
+          setState("completed");
+        } else {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("practice.err_submit", {
+                  defaultValue: "Failed to submit quiz.",
+                }),
+          );
+          setState("idle");
+        }
       } finally {
         setSubmitting(false);
       }

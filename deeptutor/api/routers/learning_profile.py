@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from deeptutor.analytics.emit import emit_domain_event
 from deeptutor.services.path_service import get_path_service
 
 router = APIRouter()
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 class LearningProfile(BaseModel):
     goals: list[str] = Field(default_factory=list)
     target_path: str = ""
-    weekly_hours: int | None = None
+    weekly_hours: float | None = None
     learning_styles: list[str] = Field(default_factory=list)
     experience_level: str = ""
     prior_summary: str = ""
@@ -71,7 +72,27 @@ async def get_learning_profile() -> LearningProfile:
 @router.put("", response_model=LearningProfile)
 async def save_learning_profile(body: LearningProfile) -> LearningProfile:
     """Persist the learner's profile answers from onboarding."""
+    prior = _load_raw()
     payload = body.model_dump(exclude={"updated_at"})
     payload["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_raw(payload)
+    emit_domain_event(
+        "LearningProfileUpdated",
+        subject_type="LearningProfile",
+        subject_id="primary",
+        payload={
+            "goals_count": len(payload.get("goals") or []),
+            "target_path": payload.get("target_path", ""),
+            "diagnostic_completed": bool(payload.get("diagnostic_completed")),
+            "weekly_hours": payload.get("weekly_hours"),
+        },
+    )
+    had_goals = bool((prior.get("goals") or []))
+    if not had_goals and (payload.get("goals") or []):
+        emit_domain_event(
+            "LearnerOnboarded",
+            subject_type="LearningProfile",
+            subject_id="primary",
+            payload={"target_path": payload.get("target_path", "")},
+        )
     return LearningProfile(**payload)

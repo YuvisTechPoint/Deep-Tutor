@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Activity, ChevronDown, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { apiUrl, resolveBase } from "@/lib/api";
+import { pendingOfflineCount } from "@/lib/offline-queue";
 import { Tooltip } from "@/components/ui/Tooltip";
 
 type ApiState = "checking" | "online" | "offline";
@@ -60,6 +61,7 @@ export function SidebarFooterStatus({
     null,
   );
   const [devLinksOpen, setDevLinksOpen] = useState(false);
+  const [offlinePending, setOfflinePending] = useState(0);
 
   const refresh = useCallback(async () => {
     const controller = new AbortController();
@@ -95,6 +97,24 @@ export function SidebarFooterStatus({
     };
   }, [refresh]);
 
+  useEffect(() => {
+    const tick = async () => {
+      try {
+        setOfflinePending(await pendingOfflineCount());
+      } catch {
+        setOfflinePending(0);
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 30_000);
+    const onFlush = () => void tick();
+    window.addEventListener("deeptutor-offline-flush", onFlush);
+    return () => {
+      window.removeEventListener("deeptutor-offline-flush", onFlush);
+      window.clearInterval(id);
+    };
+  }, []);
+
   const docsHref = `${resolveBase()}/docs`;
 
   const { summaryLines, dotClass, iconClass } = useMemo(() => {
@@ -129,6 +149,11 @@ export function SidebarFooterStatus({
       lines.push(t("Backend unreachable"));
       lines.push(t("Confirm the API server is running."));
     }
+    if (offlinePending > 0) {
+      lines.push(
+        `${offlinePending} ${t("offline actions pending sync", { defaultValue: "offline actions pending sync" })}`,
+      );
+    }
 
     const dot =
       apiState === "online"
@@ -145,7 +170,7 @@ export function SidebarFooterStatus({
           : "text-[var(--muted-foreground)]";
 
     return { summaryLines: lines, dotClass: dot, iconClass: icon };
-  }, [apiState, systemStatus, t]);
+  }, [apiState, systemStatus, offlinePending, t]);
 
   if (collapsed) {
     const tipTitle =

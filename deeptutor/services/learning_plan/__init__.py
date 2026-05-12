@@ -16,9 +16,16 @@ This is intentionally rule-based for two reasons:
 
 from deeptutor.services.learning_plan.planner import (
     build_plan,
+    iter_milestone_prerequisite_edges,
     list_plan_templates,
     plan_signature,
     update_milestone_status,
 )
 
-__all__ = ["build_plan", "list_plan_templates", "plan_signature", "update_milestone_status"]
+__all__ = [
+    "build_plan",
+    "iter_milestone_prerequisite_edges",
+    "list_plan_templates",
+    "plan_signature",
+    "update_milestone_status",
+]

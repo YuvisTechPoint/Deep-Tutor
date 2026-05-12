@@ -95,3 +95,48 @@ def detect_intent(text: str, has_image: bool = False) -> Intent:
         return Intent.VISION
 
     return Intent.GENERAL
+
+
+def adjust_intent_with_learning_profile(
+    intent: Intent,
+    profile: dict | None,
+) -> Intent:
+    """Bias coarse intent using onboarding goals / path (blueprint ch 39)."""
+    if not profile or intent not in (Intent.GENERAL, Intent.ASSESSMENT):
+        return intent
+    blob = " ".join(
+        [
+            str(profile.get("target_path", "")),
+            " ".join(profile.get("goals") or []),
+            str(profile.get("experience_level", "")),
+        ]
+    ).lower()
+    exam_markers = (
+        "exam",
+        "gate",
+        "gre",
+        "gmat",
+        "sat",
+        "upsc",
+        "cat",
+        "jee",
+        "neet",
+        "toefl",
+        "ielts",
+        "certification",
+    )
+    if intent == Intent.GENERAL and any(m in blob for m in exam_markers):
+        return Intent.ASSESSMENT
+    code_markers = (
+        "job",
+        "interview",
+        "career",
+        "leetcode",
+        "dsa",
+        "developer",
+        "coding",
+        "system design",
+    )
+    if intent == Intent.GENERAL and any(m in blob for m in code_markers):
+        return Intent.CODING
+    return intent

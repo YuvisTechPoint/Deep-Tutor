@@ -8,6 +8,8 @@ import asyncio
 from dataclasses import dataclass
 import json
 import os
+import shutil
+import stat
 from pathlib import Path
 import sqlite3
 import time
@@ -71,14 +73,76 @@ class SQLiteSessionStore:
     def _migrate_legacy_db(self, path_service) -> None:
         """Move the legacy ``data/chat_history.db`` into ``data/user/`` once."""
         legacy_path = path_service.project_root / "data" / "chat_history.db"
-        if self.db_path.exists() or not legacy_path.exists() or legacy_path == self.db_path:
+        if not legacy_path.exists() or legacy_path == self.db_path or self.db_path.exists():
             return
+        # Prefer SQLite backup() — avoids Windows rename/move quirks with open journals.
+        try:
+            ro_uri = legacy_path.resolve().as_uri() + "?mode=ro"
+            with sqlite3.connect(ro_uri, uri=True) as src, sqlite3.connect(self.db_path) as dst:
+                src.backup(dst)
+            for delay in (0.0, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0):
+                if delay:
+                    time.sleep(delay)
+                try:
+                    if os.name == "nt":
+                        try:
+                            os.chmod(legacy_path, stat.S_IWRITE)
+                        except OSError:
+                            pass
+                    legacy_path.unlink(missing_ok=True)
+                    if not legacy_path.exists():
+                        break
+                except OSError:
+                    continue
+            if legacy_path.exists():
+                bak = legacy_path.parent / (legacy_path.stem + "_legacy_migrated.bak")
+                if bak.exists():
+                    bak.unlink(missing_ok=True)
+                legacy_path.rename(bak)
+            return
+        except (OSError, sqlite3.Error):
+            pass
+        try:
+            legacy_path.replace(self.db_path)
+            return
+        except OSError:
+            pass
+        try:
+            shutil.move(str(legacy_path), str(self.db_path))
+            return
+        except OSError:
+            pass
         try:
             os.replace(legacy_path, self.db_path)
+            return
         except OSError:
-            # Fall back to leaving the legacy DB in place if an OS-level move
-            # is not possible; the new DB path will be initialized empty.
             pass
+        try:
+            shutil.copy2(legacy_path, self.db_path)
+        except OSError:
+            return
+        for delay in (0.0, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0):
+            if delay:
+                time.sleep(delay)
+            try:
+                if os.name == "nt":
+                    try:
+                        os.chmod(legacy_path, stat.S_IWRITE)
+                    except OSError:
+                        pass
+                legacy_path.unlink(missing_ok=True)
+                if not legacy_path.exists():
+                    break
+            except OSError:
+                continue
+        if legacy_path.exists():
+            bak = legacy_path.parent / (legacy_path.stem + "_legacy_migrated.bak")
+            if bak.exists():
+                bak.unlink(missing_ok=True)
+            try:
+                legacy_path.rename(bak)
+            except OSError:
+                pass
 
     def _initialize(self) -> None:
         with sqlite3.connect(self.db_path) as conn:

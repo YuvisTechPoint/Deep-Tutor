@@ -63,9 +63,15 @@ async def feature_surfaces() -> dict:
 @router.post("/model-routing/detect", response_model=IntentDetectionResponse)
 async def detect_intent_endpoint(body: IntentDetectionRequest) -> IntentDetectionResponse:
     """Detect the routing intent for a query string."""
-    from deeptutor.services.model_router import detect_intent, get_model_router
+    from deeptutor.api.routers.learning_profile import _load_raw as _load_learning_profile
+    from deeptutor.services.model_router import (
+        adjust_intent_with_learning_profile,
+        detect_intent,
+        get_model_router,
+    )
 
     intent = detect_intent(body.text, body.has_image)
+    intent = adjust_intent_with_learning_profile(intent, _load_learning_profile())
     router_svc = get_model_router()
     cfg = router_svc.route(intent)
     return IntentDetectionResponse(

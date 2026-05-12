@@ -5,6 +5,7 @@ import ThemeScript from "@/components/ThemeScript";
 import { FirebaseRoot } from "@/components/integrations/FirebaseRoot";
 import { AppShellProvider } from "@/context/AppShellContext";
 import { I18nClientBridge } from "@/i18n/I18nClientBridge";
+import { PwaRegister } from "@/components/PwaRegister";
 
 const fontSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -21,6 +22,7 @@ const fontSerif = Lora({
 export const metadata: Metadata = {
   title: "DeepTutor",
   description: "Agent-native intelligent learning companion",
+  manifest: "/manifest.json",
   icons: {
     icon: [
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -47,6 +49,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans bg-[var(--background)] text-[var(--foreground)]">
         <AppShellProvider>
+          <PwaRegister />
           <FirebaseRoot />
           <I18nClientBridge>{children}</I18nClientBridge>
         </AppShellProvider>

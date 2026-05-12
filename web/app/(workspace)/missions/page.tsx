@@ -29,6 +29,7 @@ import {
   type MissionItem,
   type MissionsToday,
 } from "@/lib/workspace-api";
+import { OfflineQueuedError } from "@/lib/offline-queue";
 
 const ICON_BY_NAME: Record<string, React.ReactNode> = {
   play: <PlayCircle className="h-5 w-5" />,
@@ -282,7 +283,11 @@ export default function MissionsPage() {
                               await reload();
                             } catch (e) {
                               setError(
-                                e instanceof Error ? e.message : "Failed to complete mission",
+                                e instanceof OfflineQueuedError
+                                  ? "Offline — mission marked locally; will sync when online."
+                                  : e instanceof Error
+                                    ? e.message
+                                    : "Failed to complete mission",
                               );
                             } finally {
                               setBusyId(null);

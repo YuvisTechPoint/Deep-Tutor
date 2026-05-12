@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DEFAULT_POST_LOGIN_PATH } from "@/lib/auth-routes";
 
 const AUTH_ENABLED = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true";
 
@@ -71,15 +72,24 @@ export function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  if (isPublicPath(pathname)) {
-    return NextResponse.next();
-  }
-
   if (pathname.startsWith("/_next") || pathname.startsWith("/favicon")) {
     return NextResponse.next();
   }
 
   const token = req.cookies.get(COOKIE_NAME)?.value;
+
+  // Signed-in users skip bare marketing `/` (/?session=… still deep-links into chat).
+  if (
+    token &&
+    pathname === "/" &&
+    !req.nextUrl.searchParams.has("session")
+  ) {
+    return NextResponse.redirect(new URL(DEFAULT_POST_LOGIN_PATH, req.nextUrl.origin));
+  }
+
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
 
   // No token — redirect to login (Next or external Streamlit), preserving destination
   if (!token) {

@@ -30,6 +30,11 @@ const TILE_DEFS = [
     subKey: "mobileStudy.tile_practice_sub",
   },
   {
+    href: "/revision",
+    labelKey: "mobileStudy.tile_revision_label",
+    subKey: "mobileStudy.tile_revision_sub",
+  },
+  {
     href: "/mock-test",
     labelKey: "mobileStudy.tile_mock_label",
     subKey: "mobileStudy.tile_mock_sub",

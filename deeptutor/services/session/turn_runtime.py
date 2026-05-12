@@ -1080,6 +1080,22 @@ class TurnRuntimeManager:
                     events=assistant_events,
                 )
             await self.store.update_turn_status(turn_id, "completed")
+            try:
+                from deeptutor.analytics.emit import emit_domain_event
+
+                emit_domain_event(
+                    "TutorTurnCompleted",
+                    subject_type="SessionTurn",
+                    subject_id=turn_id,
+                    payload={
+                        "session_id": session_id,
+                        "capability": capability_name or "chat",
+                        "assistant_chars": len(assistant_content or ""),
+                        "temporary_chat": bool(temporary_chat),
+                    },
+                )
+            except Exception:
+                logger.debug("emit TutorTurnCompleted failed", exc_info=True)
             if not is_regenerate and not temporary_chat:
                 try:
                     await memory_service.refresh_from_turn(

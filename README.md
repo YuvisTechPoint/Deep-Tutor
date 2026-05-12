@@ -154,6 +154,8 @@ Access the web interface at `http://localhost:3782`.
 
 See [`.env.example`](.env.example) for comprehensive configuration options.
 
+Provider auth (`openai-codex` OAuth login; `github-copilot` validates an existing Copilot auth session) is available via `deeptutor provider login` — see the CLI package [README](deeptutor_cli/README.md).
+
 ---
 
 ## CLI Usage

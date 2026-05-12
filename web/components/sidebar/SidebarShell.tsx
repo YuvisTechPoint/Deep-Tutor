@@ -13,6 +13,7 @@ import {
   BookMarked,
   BookOpen,
   Bot,
+  Brain,
   Briefcase,
   Calendar,
   CalendarDays,
@@ -32,6 +33,7 @@ import {
   PenLine,
   Plug,
   Plus,
+  RotateCcw,
   Search,
   Settings,
   Sparkles,
@@ -66,6 +68,12 @@ const PRIMARY_NAV: NavEntry[] = [
     tooltipKey: "Chat tooltip",
   },
   {
+    href: "/tutor",
+    label: "Tutor",
+    icon: Brain,
+    tooltipKey: "Tutor workspace",
+  },
+  {
     href: "/roadmap",
     label: "Roadmap",
     icon: MapPin,
@@ -94,6 +102,12 @@ const PRIMARY_NAV: NavEntry[] = [
     label: "Practice",
     icon: Target,
     tooltipKey: "Practice & assessment",
+  },
+  {
+    href: "/revision",
+    label: "Revision",
+    icon: RotateCcw,
+    tooltipKey: "Spaced revision queue",
   },
   {
     href: "/career",

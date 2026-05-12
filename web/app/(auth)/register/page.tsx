@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { FirebaseGoogleButton } from "@/components/auth/FirebaseGoogleButton";
 import { register, checkIsFirstUser, fetchAuthStatus } from "@/lib/auth";
+import { DEFAULT_POST_LOGIN_PATH } from "@/lib/auth-routes";
 import {
   assignMarketingLogin,
   marketingLoginUrl,
@@ -30,7 +31,7 @@ export default function RegisterPage() {
 
     // Redirect if already logged in
     fetchAuthStatus().then((status) => {
-      if (status?.authenticated) router.replace("/");
+      if (status?.authenticated) router.replace(DEFAULT_POST_LOGIN_PATH);
     });
 
     // Check if this will be the first (admin) user
@@ -53,7 +54,7 @@ export default function RegisterPage() {
     const result = await register(username, password);
 
     if (result.ok) {
-      assignMarketingLogin({ registered: "1" });
+      assignMarketingLogin({ registered: "1", next: DEFAULT_POST_LOGIN_PATH });
     } else {
       setError(result.error ?? "Registration failed");
       setLoading(false);
@@ -188,13 +189,13 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        <FirebaseGoogleButton nextPath="/" />
+        <FirebaseGoogleButton nextPath={DEFAULT_POST_LOGIN_PATH} />
       </div>
 
       <p className="mt-6 text-center text-sm text-[var(--muted-foreground)]">
         Already have an account?{" "}
         <a
-          href={marketingLoginUrl()}
+          href={marketingLoginUrl({ next: DEFAULT_POST_LOGIN_PATH })}
           className="text-[var(--primary)] hover:underline font-medium"
         >
           Sign in

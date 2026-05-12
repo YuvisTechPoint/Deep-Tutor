@@ -9,7 +9,10 @@ Wraps the existing ``MainSolver``.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from deeptutor.capabilities.request_contracts import get_capability_request_schema
 from deeptutor.core.capability_protocol import BaseCapability, CapabilityManifest
@@ -281,11 +284,58 @@ class DeepSolveCapability(BaseCapability):
             async with stream.stage("writing", source=self.name):
                 await stream.content(final_answer, source=self.name, stage="writing")
 
+        meta = dict(result.get("metadata") or {})
+        verification: dict[str, object] = {
+            "verified": False,
+            "confidence": 0.0,
+            "note": "skipped",
+        }
+        try:
+            import json as _json
+
+            from deeptutor.services.llm import complete as llm_complete
+            from deeptutor.services.llm.config import get_llm_config
+
+            cfg = get_llm_config()
+            probe = (
+                f"User question:\n{context.user_message[:4000]}\n\n"
+                f"Proposed answer:\n{str(final_answer)[:6000]}\n\n"
+                'Reply with JSON only: {"verified":true/false,"confidence":0.0-1.0,"note":"short"}'
+            )
+            raw = await llm_complete(
+                prompt=probe,
+                system_prompt="You verify tutoring answers for relevance and internal consistency. Be conservative.",
+                model=cfg.model,
+                api_key=cfg.api_key,
+                base_url=cfg.base_url or "",
+                temperature=0.0,
+            )
+            parsed = _json.loads(raw[raw.find("{") : raw.rfind("}") + 1])
+            verification = {
+                "verified": bool(parsed.get("verified")),
+                "confidence": float(parsed.get("confidence") or 0.0),
+                "note": str(parsed.get("note") or "")[:200],
+            }
+        except Exception:
+            logger.debug("deep_solve verification skipped", exc_info=True)
+        meta["verification"] = verification
+        try:
+            from deeptutor.analytics.emit import emit_domain_event
+
+            emit_domain_event(
+                "TutorAnswerVerified",
+                subject_type="deep_solve",
+                subject_id=str(context.session_id or "session"),
+                payload=verification,
+            )
+        except Exception:
+            logger.debug("verification domain event failed", exc_info=True)
+
         await stream.result(
             {
                 "response": final_answer,
                 "output_dir": result.get("output_dir", ""),
-                "metadata": result.get("metadata", {}),
+                "metadata": meta,
             },
             source=self.name,
         )

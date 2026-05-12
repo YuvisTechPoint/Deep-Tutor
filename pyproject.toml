@@ -83,6 +83,12 @@ server = [
     "loguru>=0.7.3,<1.0.0",
     "json-repair>=0.57.0,<1.0.0",
     "firebase-admin>=6.5.0,<7.0.0",
+    # Optional ClickHouse export for domain_events (see CLICKHOUSE_* env vars).
+    "clickhouse-connect>=0.7.0,<1.0.0",
+    # Optional Neo4j milestone graph (see NEO4J_* env vars).
+    "neo4j>=5.14.0,<6.0.0",
+    # Optional TOTP MFA for admins (AUTH_ADMIN_MFA_REQUIRED).
+    "pyotp>=2.9.0,<3.0.0",
 ]
 
 # TutorBot agent engine + channel SDKs. Mirrors requirements/tutorbot.txt.

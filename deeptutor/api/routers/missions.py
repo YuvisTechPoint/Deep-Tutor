@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from deeptutor.analytics.emit import emit_domain_event
 from deeptutor.api.routers.learning_profile import _load_raw as _load_profile
 from deeptutor.services.gamification import get_gamification_store
 from deeptutor.services.learning_plan import build_plan
@@ -190,6 +191,12 @@ async def complete_mission(mission_id: str, body: MissionCompleteRequest) -> dic
         xp=xp,
         source=f"mission:{mission_id}",
         metadata={"mission_id": mission_id},
+    )
+    emit_domain_event(
+        "MissionCompleted",
+        subject_type="Mission",
+        subject_id=mission_id,
+        payload={"xp": xp},
     )
     return {
         "mission_id": mission_id,

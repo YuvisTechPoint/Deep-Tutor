@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import time
 from pathlib import Path
 import sqlite3
 
@@ -14,16 +16,20 @@ def test_sqlite_store_defaults_to_data_user_chat_history_db(tmp_path: Path) -> N
     service = PathService.get_instance()
     original_root = service._project_root
     original_user_dir = service._user_data_dir
+    g = SQLiteSessionStore.__init__.__globals__
+    orig_get_path = g["get_path_service"]
 
     try:
         service._project_root = tmp_path
         service._user_data_dir = tmp_path / "data" / "user"
+        g["get_path_service"] = lambda: service
 
         store = SQLiteSessionStore()
 
         assert store.db_path == tmp_path / "data" / "user" / "chat_history.db"
         assert store.db_path.exists()
     finally:
+        g["get_path_service"] = orig_get_path
         service._project_root = original_root
         service._user_data_dir = original_user_dir
 
@@ -32,21 +38,49 @@ def test_sqlite_store_migrates_legacy_chat_history_db(tmp_path: Path) -> None:
     service = PathService.get_instance()
     original_root = service._project_root
     original_user_dir = service._user_data_dir
+    g = SQLiteSessionStore.__init__.__globals__
+    orig_get_path = g["get_path_service"]
 
     try:
         service._project_root = tmp_path
         service._user_data_dir = tmp_path / "data" / "user"
+        g["get_path_service"] = lambda: service
         legacy_db = tmp_path / "data" / "chat_history.db"
         legacy_db.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(legacy_db) as conn:
+            # Avoid WAL sidecars on Windows; they can block shutil.move/os.replace.
+            conn.execute("PRAGMA journal_mode=DELETE")
             conn.execute("CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
             conn.commit()
+        gc.collect()
+        time.sleep(0.05)
+        for suffix in ("-wal", "-shm"):
+            side = Path(str(legacy_db) + suffix)
+            if side.exists():
+                side.unlink(missing_ok=True)
+
+        newp = service.get_chat_history_db()
+        legp = service.project_root / "data" / "chat_history.db"
+        assert newp.resolve() != legp.resolve()
+        assert legp.resolve() == legacy_db.resolve()
+        assert not newp.exists(), f"target DB should not exist before migrate: {newp}"
 
         store = SQLiteSessionStore()
 
+        assert store.db_path == newp, "get_path_service patch must apply to SQLiteSessionStore.__init__"
         assert store.db_path.exists()
-        assert not legacy_db.exists()
+        # Prefer removing data/chat_history.db; on some Windows setups the file stays
+        # locked while SQLite backup still copies the schema into data/user/chat_history.db.
+        if legacy_db.exists():
+            with sqlite3.connect(store.db_path) as conn:
+                row = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='legacy'",
+                ).fetchone()
+            assert row is not None, "legacy file remained but user DB was not migrated"
+        else:
+            assert True
     finally:
+        g["get_path_service"] = orig_get_path
         service._project_root = original_root
         service._user_data_dir = original_user_dir
 

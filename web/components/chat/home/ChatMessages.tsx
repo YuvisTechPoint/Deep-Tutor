@@ -10,6 +10,8 @@ import {
   Copy,
   MessageSquare,
   RefreshCcw,
+  ShieldAlert,
+  ShieldCheck,
   Wand2,
   X,
   Zap,
@@ -27,6 +29,7 @@ import { apiUrl } from "@/lib/api";
 import { docIconFor } from "@/lib/doc-attachments";
 import { extractMathAnimatorResult } from "@/lib/math-animator-types";
 import { extractQuizQuestions } from "@/lib/quiz-types";
+import { extractDeepSolveVerification } from "@/lib/deep-solve-verification";
 import { extractVisualizeResult } from "@/lib/visualize-types";
 import type { StreamEvent } from "@/lib/unified-ws";
 import { hasVisibleMarkdownContent } from "@/lib/markdown-display";
@@ -158,6 +161,13 @@ const AssistantMessage = memo(function AssistantMessage({
     return extractVisualizeResult(resultEvent.metadata);
   }, [msg.capability, resultEvent]);
 
+  const deepSolveVerification = useMemo(() => {
+    if (msg.capability !== "deep_solve" || !resultEvent) return null;
+    return extractDeepSolveVerification(
+      resultEvent.metadata as Record<string, unknown> | undefined,
+    );
+  }, [msg.capability, resultEvent]);
+
   return (
     <>
       {hasCallTrace ? (
@@ -190,7 +200,55 @@ const AssistantMessage = memo(function AssistantMessage({
           language={language}
         />
       ) : (
-        <AssistantResponse content={msg.content} />
+        <div className="space-y-2">
+          {deepSolveVerification ? (
+            <div
+              className={`flex gap-2 rounded-lg border px-3 py-2 text-[12px] leading-snug ${
+                deepSolveVerification.note === "skipped"
+                  ? "border-white/10 bg-white/[0.04] text-[var(--muted-foreground)]"
+                  : deepSolveVerification.verified &&
+                      deepSolveVerification.confidence >= 0.65
+                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-100"
+              }`}
+            >
+              {deepSolveVerification.note === "skipped" ? null : deepSolveVerification.verified &&
+                deepSolveVerification.confidence >= 0.65 ? (
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              ) : (
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              )}
+              <div className="min-w-0">
+                <p className="font-semibold text-[var(--foreground)]">
+                  {deepSolveVerification.note === "skipped"
+                    ? "Verification skipped"
+                    : deepSolveVerification.verified &&
+                        deepSolveVerification.confidence >= 0.65
+                      ? "Answer passed self-check"
+                      : "Needs your verification"}
+                </p>
+                {deepSolveVerification.note !== "skipped" ? (
+                  <p className="mt-0.5 text-[11px] opacity-90">
+                    Confidence{" "}
+                    {Math.round(
+                      Math.min(1, Math.max(0, deepSolveVerification.confidence)) *
+                        100,
+                    )}
+                    %
+                    {deepSolveVerification.note
+                      ? ` · ${deepSolveVerification.note}`
+                      : ""}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-[11px] opacity-90">
+                    High-stakes checks were not run (e.g. model unavailable).
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : null}
+          <AssistantResponse content={msg.content} />
+        </div>
       )}
     </>
   );

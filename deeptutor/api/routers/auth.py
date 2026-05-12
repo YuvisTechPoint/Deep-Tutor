@@ -4,7 +4,7 @@ import logging
 import os
 import secrets
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 
 # SameSite=None lets the cookie work when the browser accesses the frontend via
@@ -79,6 +79,12 @@ class RegisterRequest(BaseModel):
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         return v
+
+
+class MfaActivateRequest(BaseModel):
+    """TOTP code to confirm MFA enrollment."""
+
+    code: str = Field(min_length=6, max_length=12)
 
 
 class SetRoleRequest(BaseModel):
@@ -195,6 +201,7 @@ def require_auth(
 
 
 def require_admin(
+    request: Request,
     payload: TokenPayload | None = Depends(require_auth),
 ) -> TokenPayload:
     """
@@ -213,7 +220,69 @@ def require_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+    try:
+        from deeptutor.services.admin_mfa import assert_admin_mfa
+
+        assert_admin_mfa(request, payload.username)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.debug("admin MFA gate skipped", exc_info=True)
     return payload
+
+
+@router.get("/mfa/enroll")
+async def mfa_enroll(
+    request: Request,
+    payload: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Generate a TOTP secret for the current admin (pyotp)."""
+    try:
+        import pyotp
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="pyotp is not installed",
+        ) from exc
+    from deeptutor.services.admin_mfa import get_mfa_state, set_enrollment_secret
+
+    secret = pyotp.random_base32()
+    set_enrollment_secret(payload.username, secret)
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=payload.username,
+        issuer_name="DeepTutor",
+    )
+    return {
+        "username": payload.username,
+        "secret": secret,
+        "otpauth_uri": uri,
+        "enabled": bool(get_mfa_state(payload.username).get("enabled")),
+    }
+
+
+@router.post("/mfa/activate")
+async def mfa_activate_endpoint(
+    request: Request,
+    body: MfaActivateRequest,
+    payload: TokenPayload = Depends(require_admin),
+) -> dict:
+    """Verify a TOTP code and enable MFA for this admin account."""
+    try:
+        import pyotp
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="pyotp is not installed",
+        ) from exc
+    from deeptutor.services.admin_mfa import activate as mfa_activate_store
+    from deeptutor.services.admin_mfa import get_mfa_state
+
+    st = get_mfa_state(payload.username)
+    secret = str(st.get("secret") or "")
+    if not secret or not pyotp.TOTP(secret).verify(body.code.strip(), valid_window=1):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    mfa_activate_store(payload.username)
+    return {"ok": True, "enabled": True}
 
 
 # ---------------------------------------------------------------------------

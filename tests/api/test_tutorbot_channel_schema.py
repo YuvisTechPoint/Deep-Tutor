@@ -23,12 +23,32 @@ from deeptutor.api.routers._tutorbot_channel_schema import (
 )
 
 
+def _has_telegram_sdk() -> bool:
+    try:
+        import telegram  # noqa: F401, PLC0415
+
+        return True
+    except ImportError:
+        return False
+
+
+def _has_slack_sdk() -> bool:
+    try:
+        import slack_sdk  # noqa: F401, PLC0415
+
+        return True
+    except ImportError:
+        return False
+
+
 class TestResolveConfigModel:
+    @pytest.mark.skipif(not _has_telegram_sdk(), reason="Install deeptutor[tutorbot] for Telegram channel tests")
     def test_telegram_pairs_with_telegram_config(self) -> None:
         from deeptutor.tutorbot.channels.telegram import TelegramChannel, TelegramConfig
 
         assert resolve_config_model(TelegramChannel) is TelegramConfig
 
+    @pytest.mark.skipif(not _has_slack_sdk(), reason="Install deeptutor[tutorbot] for Slack channel tests")
     def test_slack_pairs_with_slack_config(self) -> None:
         from deeptutor.tutorbot.channels.slack import SlackChannel, SlackConfig
 
@@ -115,6 +135,7 @@ class TestCollectSecretFields:
 
 
 class TestChannelSchemaPayload:
+    @pytest.mark.skipif(not _has_telegram_sdk(), reason="Install deeptutor[tutorbot] for Telegram channel tests")
     def test_telegram_payload_shape(self) -> None:
         from deeptutor.tutorbot.channels.telegram import TelegramChannel
 
@@ -128,6 +149,7 @@ class TestChannelSchemaPayload:
         assert "allow_from" in props and "allowFrom" not in props
         assert payload["default_config"]["enabled"] is False
 
+    @pytest.mark.skipif(not _has_slack_sdk(), reason="Install deeptutor[tutorbot] for Slack channel tests")
     def test_slack_dm_subtree_inlined(self) -> None:
         from deeptutor.tutorbot.channels.slack import SlackChannel
 
@@ -160,9 +182,12 @@ class TestEndpoint:
         assert res.status_code == 200
         body = res.json()
         assert set(body.keys()) >= {"channels", "global"}
-        # Telegram is always installed (no extra deps).
-        assert "telegram" in body["channels"]
+        if _has_telegram_sdk():
+            assert "telegram" in body["channels"]
+        else:
+            assert body["channels"], "expected at least one channel schema"
 
+    @pytest.mark.skipif(not _has_telegram_sdk(), reason="Install deeptutor[tutorbot] for Telegram channel tests")
     def test_telegram_entry_has_secret_fields(self, client: TestClient) -> None:
         res = client.get("/api/v1/tutorbot/channels/schema")
         tg = res.json()["channels"]["telegram"]
@@ -177,6 +202,7 @@ class TestEndpoint:
 
 
 class TestAllChannelSchemas:
+    @pytest.mark.skipif(not _has_telegram_sdk(), reason="Install deeptutor[tutorbot] for Telegram channel tests")
     def test_returns_at_least_telegram(self) -> None:
         out = all_channel_schemas()
         assert "telegram" in out

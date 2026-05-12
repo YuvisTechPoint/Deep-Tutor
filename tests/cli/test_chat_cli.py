@@ -130,13 +130,16 @@ def test_session_list_command_uses_shared_store(monkeypatch) -> None:
 
 
 def test_start_command_propagates_start_web_exit_code(monkeypatch) -> None:
+    from pathlib import Path
+
     class Result:
         returncode = 7
 
     def _fake_run(cmd, check=False):  # noqa: ANN001
         assert check is False
         assert cmd[0]
-        assert cmd[1].endswith("scripts/start_web.py")
+        script = Path(cmd[1]).as_posix()
+        assert script.endswith("scripts/start_web.py")
         return Result()
 
     monkeypatch.setattr("subprocess.run", _fake_run)

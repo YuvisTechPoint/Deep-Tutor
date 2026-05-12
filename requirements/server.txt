@@ -29,3 +29,12 @@ json-repair>=0.57.0,<1.0.0
 
 # --- Firebase (verify Web ID tokens for /auth/firebase) ---
 firebase-admin>=6.5.0,<7.0.0
+
+# --- Optional ClickHouse (domain_events warehouse; CLICKHOUSE_ENABLED) ---
+clickhouse-connect>=0.7.0,<1.0.0
+
+# --- Optional Neo4j (roadmap graph; NEO4J_ENABLED) ---
+neo4j>=5.14.0,<6.0.0
+
+# --- Optional admin TOTP (AUTH_ADMIN_MFA_REQUIRED) ---
+pyotp>=2.9.0,<3.0.0

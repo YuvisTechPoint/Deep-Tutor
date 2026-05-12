@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import os
 
@@ -130,12 +131,16 @@ def _build_cors_settings() -> dict[str, object]:
     return {"allow_origins": origins, "allow_origin_regex": allow_origin_regex}
 
 
+_clickhouse_flush_task: asyncio.Task | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifecycle management
     Gracefully handle startup and shutdown events, avoid CancelledError
     """
+    global _clickhouse_flush_task
     # Execute on startup
     logger.info("Application startup")
 
@@ -176,10 +181,41 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"PocketBase startup check failed: {e}")
 
+    try:
+        from deeptutor.analytics import neo4j_graph
+
+        sync_result = neo4j_graph.sync_milestone_graph_from_templates()
+        if sync_result.get("edges_written"):
+            logger.info("Neo4j milestone graph synced: %s edges", sync_result["edges_written"])
+    except Exception as e:
+        logger.debug(f"Neo4j startup sync skipped: {e}")
+
+    async def _clickhouse_flush_loop() -> None:
+        from deeptutor.analytics import clickhouse_sync
+
+        while True:
+            await asyncio.sleep(30)
+            try:
+                n = clickhouse_sync.flush_once()
+                if n:
+                    logger.info("ClickHouse domain_events flush: %s rows", n)
+            except Exception:
+                logger.debug("ClickHouse flush tick failed", exc_info=True)
+
+    _clickhouse_flush_task = asyncio.create_task(_clickhouse_flush_loop())
+
     yield
 
     # Execute on shutdown
     logger.info("Application shutdown")
+
+    if _clickhouse_flush_task is not None:
+        _clickhouse_flush_task.cancel()
+        try:
+            await _clickhouse_flush_task
+        except asyncio.CancelledError:
+            pass
+        _clickhouse_flush_task = None
 
     # Stop TutorBots
     try:
@@ -275,9 +311,12 @@ from deeptutor.api.routers import (
     chat,
     co_writer,
     dashboard,
+    diagnostic,
+    domain_events_admin,
     gamification,
     image_generation,
     knowledge,
+    learning_graph,
     learning_plan,
     learning_profile,
     memory,
@@ -290,6 +329,7 @@ from deeptutor.api.routers import (
     practice,
     question,
     question_notebook,
+    revision,
     safety,
     sessions,
     settings,
@@ -422,6 +462,12 @@ app.include_router(
     dependencies=_auth,
 )
 app.include_router(
+    learning_graph.router,
+    prefix="/api/v1/learning/graph",
+    tags=["learning-graph"],
+    dependencies=_auth,
+)
+app.include_router(
     missions.router,
     prefix="/api/v1/missions",
     tags=["missions"],
@@ -440,9 +486,27 @@ app.include_router(
     dependencies=_auth,
 )
 app.include_router(
+    domain_events_admin.router,
+    prefix="/api/v1/admin",
+    tags=["admin"],
+    dependencies=_auth,
+)
+app.include_router(
     practice.router,
     prefix="/api/v1/practice",
     tags=["practice"],
+    dependencies=_auth,
+)
+app.include_router(
+    diagnostic.router,
+    prefix="/api/v1/diagnostic",
+    tags=["diagnostic"],
+    dependencies=_auth,
+)
+app.include_router(
+    revision.router,
+    prefix="/api/v1/revision",
+    tags=["revision"],
     dependencies=_auth,
 )
 app.include_router(

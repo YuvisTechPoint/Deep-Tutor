@@ -14,7 +14,13 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from deeptutor.agents.chat import ChatAgent, SessionManager
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm.config import LLMConfig, get_llm_config
-from deeptutor.services.model_router import detect_intent, get_model_router
+from deeptutor.api.routers.learning_profile import _load_raw as _load_learning_profile
+from deeptutor.analytics.emit import emit_domain_event
+from deeptutor.services.model_router import (
+    adjust_intent_with_learning_profile,
+    detect_intent,
+    get_model_router,
+)
 from deeptutor.services.settings.interface_settings import get_ui_language
 
 # Initialize logger
@@ -196,11 +202,21 @@ async def websocket_chat(websocket: WebSocket):
                 )
 
                 intent = detect_intent(message, has_image=has_image)
+                intent = adjust_intent_with_learning_profile(
+                    intent,
+                    _load_learning_profile(),
+                )
                 # Use feature-aware routing so ``HF_MODEL_CHAT`` (if set) takes
                 # precedence over the intent default while still respecting
                 # specialist routes (e.g. coding → DeepSeek-Coder) when the
                 # user has not pinned a chat-specific model.
                 routed = get_model_router().route_feature("chat", intent=intent)
+                emit_domain_event(
+                    "ModelRouteSelected",
+                    subject_type="ChatTurn",
+                    subject_id=session_id,
+                    payload={"intent": intent.value, "model": routed.model},
+                )
                 await websocket.send_json(
                     {
                         "type": "route",

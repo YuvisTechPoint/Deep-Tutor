@@ -9,6 +9,10 @@
  */
 
 import { apiFetch, apiUrl, summarizeHttpErrorBody } from "@/lib/api";
+import {
+  OfflineQueuedError,
+  enqueueOfflineMutation,
+} from "@/lib/offline-queue";
 
 const FALLBACK_WARN_PREFIX = "dt_workspace_api_fallback_warned:";
 
@@ -479,15 +483,18 @@ export function fetchMissionsToday() {
   );
 }
 
-export function completeMission(missionId: string, xpReward?: number) {
+export async function completeMission(missionId: string, xpReward?: number) {
+  const path = `/api/v1/missions/${encodeURIComponent(missionId)}/complete`;
+  const body = { mission_id: missionId, xp_reward: xpReward };
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    await enqueueOfflineMutation("POST", path, body);
+    throw new OfflineQueuedError("mission_complete");
+  }
   return sendJson<{
     mission_id: string;
     already_completed: boolean;
     event?: XPHistoryItem;
-  }>(`/api/v1/missions/${encodeURIComponent(missionId)}/complete`, {
-    mission_id: missionId,
-    xp_reward: xpReward,
-  });
+  }>(path, body);
 }
 
 // ─── Career ──────────────────────────────────────────────────────────────────
@@ -688,16 +695,75 @@ export interface QuizScore {
   per_topic: Record<string, { correct: number; incorrect: number }>;
 }
 
-export function submitPracticeQuiz(payload: {
+export type QuizSubmitResponse = {
+  score: QuizScore;
+  awarded_xp: number;
+  events: XPHistoryItem[];
+};
+
+export async function submitPracticeQuiz(payload: {
   quiz_id: string;
   answers: { question_id: string; answer: string }[];
   duration_seconds?: number;
 }) {
-  return sendJson<{
-    score: QuizScore;
-    awarded_xp: number;
-    events: XPHistoryItem[];
-  }>("/api/v1/practice/submit", payload);
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    await enqueueOfflineMutation("POST", "/api/v1/practice/submit", payload);
+    throw new OfflineQueuedError("practice_submit");
+  }
+  return sendJson<QuizSubmitResponse>("/api/v1/practice/submit", payload);
+}
+
+export interface DiagnosticStartResponse {
+  quiz_id: string;
+  items: Array<{
+    id: string;
+    topic: string;
+    difficulty: string;
+    question: string;
+    options: { key: string; text: string }[];
+    tags: string[];
+    model_role: string;
+  }>;
+  num_questions: number;
+}
+
+export async function diagnosticStart(): Promise<DiagnosticStartResponse> {
+  return sendJson<DiagnosticStartResponse>("/api/v1/diagnostic/start", {});
+}
+
+export async function diagnosticFinish(payload: {
+  quiz_id: string;
+  answers: { question_id: string; answer: string }[];
+  duration_seconds?: number;
+}): Promise<QuizSubmitResponse> {
+  return sendJson<QuizSubmitResponse>("/api/v1/diagnostic/finish", payload);
+}
+
+export interface RevisionCardItem {
+  id: string;
+  topic: string;
+  due_at_ms: number;
+  ease: number;
+  repetitions: number;
+  state: string;
+}
+
+export async function fetchRevisionQueue(limit = 20) {
+  return workspaceGetJson<{ items: RevisionCardItem[]; count: number }>(
+    `/api/v1/revision/queue?limit=${encodeURIComponent(String(limit))}`,
+    { items: [], count: 0 },
+    "GET /api/v1/revision/queue",
+  );
+}
+
+export async function postRevisionReview(
+  cardId: string,
+  grade: "again" | "good" | "easy",
+) {
+  return sendJson<{ card: RevisionCardItem }>("/api/v1/revision/review", {
+    card_id: cardId,
+    grade,
+  });
 }
 
 export interface PracticeCheckResponse {

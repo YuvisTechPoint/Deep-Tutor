@@ -1,0 +1,10 @@
+{
+  "name": "DeepTutor",
+  "short_name": "DeepTutor",
+  "description": "Agent-native intelligent learning companion",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f0f12",
+  "theme_color": "#7c3aed",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

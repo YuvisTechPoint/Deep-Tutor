@@ -17,6 +17,11 @@ import {
   saveLearningProfile,
 } from "@/lib/learning-profile-api";
 import { notifyLearningProfileUpdated } from "@/lib/learning-profile-events";
+import {
+  diagnosticFinish,
+  diagnosticStart,
+  type DiagnosticStartResponse,
+} from "@/lib/workspace-api";
 
 const STEP_COUNT = 7;
 
@@ -62,6 +67,12 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [profile, setProfile] = useState<LearningProfile>(emptyProfile());
+  const [diagBusy, setDiagBusy] = useState(false);
+  const [diagQuizId, setDiagQuizId] = useState<string | null>(null);
+  const [diagItems, setDiagItems] = useState<
+    DiagnosticStartResponse["items"]
+  >([]);
+  const [diagSel, setDiagSel] = useState<Record<string, string>>({});
 
   const goalPresets = useMemo(() => goalsOptions(t), [t]);
   const stylePresets = useMemo(() => styleOptions(t), [t]);
@@ -102,6 +113,15 @@ export default function OnboardingPage() {
   );
 
   const persist = async () => {
+    if (!profile.diagnostic_completed) {
+      setError(
+        t("onboarding.diagnostic_required", {
+          defaultValue:
+            "Complete the short diagnostic on this step before saving your profile.",
+        }),
+      );
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -387,33 +407,160 @@ export default function OnboardingPage() {
           )}
 
           {step === 6 && (
-            <section className="space-y-4">
-              <h2 className="text-base font-medium text-[var(--foreground)]">
-                {t("onboarding.step_notes_title")}
-              </h2>
-              <textarea
-                value={profile.prior_summary}
-                onChange={(e) =>
-                  setProfile((p) => ({ ...p, prior_summary: e.target.value }))
-                }
-                rows={5}
-                placeholder={t("onboarding.step_notes_placeholder")}
-                className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--background)]/60 px-4 py-3 text-sm text-[var(--foreground)] outline-none ring-violet-500/30 placeholder:text-[var(--muted-foreground)] focus:ring-2"
-              />
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--muted-foreground)]">
-                <input
-                  type="checkbox"
-                  checked={profile.diagnostic_completed}
+            <section className="space-y-6">
+              <div className="space-y-3">
+                <h2 className="text-base font-medium text-[var(--foreground)]">
+                  {t("onboarding.step_notes_title")}
+                </h2>
+                <textarea
+                  value={profile.prior_summary}
                   onChange={(e) =>
-                    setProfile((p) => ({
-                      ...p,
-                      diagnostic_completed: e.target.checked,
-                    }))
+                    setProfile((p) => ({ ...p, prior_summary: e.target.value }))
                   }
-                  className="accent-violet-500"
+                  rows={4}
+                  placeholder={t("onboarding.step_notes_placeholder")}
+                  className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--background)]/60 px-4 py-3 text-sm text-[var(--foreground)] outline-none ring-violet-500/30 placeholder:text-[var(--muted-foreground)] focus:ring-2"
                 />
-                {t("onboarding.diagnostic_done")}
-              </label>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-[var(--border)]/60 bg-[var(--secondary)]/20 p-4">
+                <h3 className="text-sm font-medium text-[var(--foreground)]">
+                  {t("onboarding.diagnostic_section_title", {
+                    defaultValue: "Baseline diagnostic (3 questions)",
+                  })}
+                </h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {t("onboarding.diagnostic_section_body", {
+                    defaultValue:
+                      "Seeds your roadmap and revision queue. Takes about two minutes.",
+                  })}
+                </p>
+                {profile.diagnostic_completed ? (
+                  <p className="text-sm text-emerald-400">
+                    {t("onboarding.diagnostic_done_ok", {
+                      defaultValue: "Diagnostic completed — you can save your profile.",
+                    })}
+                  </p>
+                ) : diagItems.length === 0 ? (
+                  <button
+                    type="button"
+                    disabled={diagBusy}
+                    onClick={async () => {
+                      setDiagBusy(true);
+                      setError(null);
+                      try {
+                        const r = await diagnosticStart();
+                        setDiagQuizId(r.quiz_id);
+                        setDiagItems(r.items);
+                        setDiagSel({});
+                      } catch (e) {
+                        setError(
+                          e instanceof Error
+                            ? e.message
+                            : t("onboarding.diagnostic_start_failed", {
+                                defaultValue: "Could not start diagnostic.",
+                              }),
+                        );
+                      } finally {
+                        setDiagBusy(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {diagBusy && (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                    )}
+                    {t("onboarding.diagnostic_start", {
+                      defaultValue: "Start diagnostic",
+                    })}
+                  </button>
+                ) : (
+                  <div className="space-y-4">
+                    {diagItems.map((q) => (
+                      <div key={q.id} className="space-y-2">
+                        <p className="text-sm text-[var(--foreground)]">
+                          {q.question}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {q.options.map((opt) => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() =>
+                                setDiagSel((prev) => ({
+                                  ...prev,
+                                  [q.id]: opt.key,
+                                }))
+                              }
+                              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                diagSel[q.id] === opt.key
+                                  ? "border-violet-500/60 bg-violet-500/15 text-violet-100"
+                                  : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--border)]/80"
+                              }`}
+                            >
+                              <span className="mr-1 font-mono text-[10px] opacity-70">
+                                {opt.key}
+                              </span>
+                              {opt.text}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={diagBusy}
+                      onClick={async () => {
+                        if (!diagQuizId) return;
+                        const answers = diagItems.map((it) => ({
+                          question_id: it.id,
+                          answer: diagSel[it.id] || "",
+                        }));
+                        if (answers.some((a) => !a.answer)) {
+                          setError(
+                            t("onboarding.diagnostic_answer_all", {
+                              defaultValue: "Select an answer for every question.",
+                            }),
+                          );
+                          return;
+                        }
+                        setDiagBusy(true);
+                        setError(null);
+                        try {
+                          await diagnosticFinish({ quiz_id: diagQuizId, answers });
+                          const refreshed = await getLearningProfile();
+                          setProfile((prev) => ({
+                            ...emptyProfile(),
+                            ...refreshed,
+                            prior_summary: prev.prior_summary,
+                          }));
+                          setDiagItems([]);
+                          setDiagQuizId(null);
+                          setDiagSel({});
+                        } catch (e) {
+                          setError(
+                            e instanceof Error
+                              ? e.message
+                              : t("onboarding.diagnostic_finish_failed", {
+                                  defaultValue: "Could not submit diagnostic.",
+                                }),
+                          );
+                        } finally {
+                          setDiagBusy(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                    >
+                      {diagBusy && (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                      )}
+                      {t("onboarding.diagnostic_submit", {
+                        defaultValue: "Submit diagnostic",
+                      })}
+                    </button>
+                  </div>
+                )}
+              </div>
             </section>
           )}
 

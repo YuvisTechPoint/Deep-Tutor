@@ -10,6 +10,7 @@ import {
   Code2,
   Flame,
   Loader2,
+  RotateCcw,
   Sparkles,
   Star,
   Target,
@@ -30,6 +31,7 @@ import {
   fetchGamificationState,
   fetchLearningPlan,
   fetchNextAction,
+  fetchRevisionQueue,
   fetchTopicMastery,
   fetchXPHistory,
   fetchXPTrend,
@@ -244,6 +246,7 @@ export default function DashboardPage() {
   const [recent, setRecent] = useState<XPHistoryItem[]>([]);
   const [plan, setPlan] = useState<LearningPlan | null>(null);
   const [nextAction, setNextAction] = useState<NextAction | null>(null);
+  const [revisionDueCount, setRevisionDueCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -251,7 +254,7 @@ export default function DashboardPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [s, sum, t, tr, hist, p, na] = await Promise.all([
+        const [s, sum, t, tr, hist, p, na, rev] = await Promise.all([
           fetchGamificationState(),
           fetchAnalyticsSummary("30d"),
           fetchTopicMastery(),
@@ -259,6 +262,7 @@ export default function DashboardPage() {
           fetchXPHistory(8),
           fetchLearningPlan(),
           fetchNextAction(),
+          fetchRevisionQueue(20),
         ]);
         if (cancelled) return;
         setState(s);
@@ -268,6 +272,7 @@ export default function DashboardPage() {
         setRecent(hist.items);
         setPlan(p);
         setNextAction(na.action);
+        setRevisionDueCount(rev.count);
       } catch (e) {
         if (!cancelled) {
           setError(
@@ -388,6 +393,31 @@ export default function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+          {revisionDueCount > 0 ? (
+            <Link
+              href="/revision"
+              className="group flex flex-col gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 transition-colors hover:border-emerald-400/50 sm:flex-row sm:items-center"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300">
+                <RotateCcw className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400/90">
+                  Spaced revision
+                </p>
+                <h3 className="text-sm font-bold text-[var(--foreground)]">
+                  {revisionDueCount} card{revisionDueCount === 1 ? "" : "s"} due now
+                </h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Short reviews from practice — keep recall strong.
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1 self-end rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition-transform group-hover:translate-x-0.5 sm:self-center">
+                Review
+                <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </Link>
+          ) : null}
           {nextAction && (
             <Link
               href={nextAction.href}

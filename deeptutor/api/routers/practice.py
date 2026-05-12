@@ -25,7 +25,9 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from deeptutor.analytics.emit import emit_domain_event
 from deeptutor.services.gamification import get_gamification_store
+from deeptutor.services.revision import seed_from_practice_score
 from deeptutor.services.practice import (
     drop_quiz,
     generate_quiz,
@@ -278,6 +280,28 @@ async def submit_quiz(body: SubmitRequest) -> SubmitResponse:
     )
 
     drop_quiz(body.quiz_id)
+    emit_domain_event(
+        "PracticeSessionCompleted",
+        subject_type="PracticeQuiz",
+        subject_id=body.quiz_id,
+        payload={
+            "score": score,
+            "awarded_xp": awarded,
+            "duration_seconds": body.duration_seconds,
+            "topics": list(score.get("per_topic", {}).keys()),
+        },
+    )
+    try:
+        seeded = seed_from_practice_score(score)
+        if seeded:
+            emit_domain_event(
+                "ConceptMasteryUpdated",
+                subject_type="RevisionQueue",
+                subject_id=body.quiz_id,
+                payload={"seeded_card_ids": seeded},
+            )
+    except Exception:
+        logger.debug("revision seed skipped", exc_info=True)
     return SubmitResponse(score=score, awarded_xp=awarded, events=events)
 
 
