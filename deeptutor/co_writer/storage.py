@@ -49,6 +49,7 @@ class CoWriterDocumentSummary(BaseModel):
     created_at: float
     updated_at: float
     preview: str = ""
+    word_count: int = 0
 
 
 def _atomic_write_text(path: Path, text: str) -> None:
@@ -82,7 +83,7 @@ def _read_json(path: Path) -> Any | None:
 
 
 def _derive_title(content: str, fallback: str = "Untitled draft") -> str:
-    """Pick a title from the first heading line; fallback otherwise."""
+    """Pick a title from the first real heading or line; skip ``#``-only lines."""
     if not content:
         return fallback
     for raw in content.splitlines():
@@ -93,8 +94,24 @@ def _derive_title(content: str, fallback: str = "Untitled draft") -> str:
             stripped = line.lstrip("#").strip()
             if stripped:
                 return stripped[:120]
+            continue
         return line[:120]
     return fallback
+
+
+def _display_title(stored_title: str, content: str) -> str:
+    """Use stored title unless it is empty or a meaningless ``#``-only stub."""
+    s = (stored_title or "").strip()
+    if not s or set(s) <= {"#"}:
+        return _derive_title(content)
+    return s[:120]
+
+
+def _word_count(text: str) -> int:
+    """Approximate word count for list cards (whitespace-separated tokens)."""
+    if not text or not text.strip():
+        return 0
+    return len(text.split())
 
 
 def _build_preview(content: str, limit: int = 160) -> str:
@@ -158,10 +175,11 @@ class CoWriterStorage:
             summaries.append(
                 CoWriterDocumentSummary(
                     id=doc.id,
-                    title=doc.title or _derive_title(doc.content),
+                    title=_display_title(doc.title, doc.content),
                     created_at=doc.created_at,
                     updated_at=doc.updated_at,
                     preview=_build_preview(doc.content),
+                    word_count=_word_count(doc.content),
                 )
             )
         summaries.sort(key=lambda s: s.updated_at, reverse=True)

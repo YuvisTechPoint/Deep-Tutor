@@ -3,8 +3,10 @@ EditAgent - Co-writer editing agent.
 Inherits from unified BaseAgent.
 """
 
+from collections import Counter
 from datetime import datetime
 import json
+import re
 from typing import Any, Literal
 import uuid
 
@@ -14,6 +16,255 @@ from deeptutor.services.llm import clean_thinking_tags
 from deeptutor.services.path_service import get_path_service
 from deeptutor.tools.rag_tool import rag_search
 from deeptutor.tools.web_search import web_search
+
+_WORD_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9'\-]*")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+_TASK_PREFIX_RE = re.compile(r"^(\s*(?:- \[[ xX]\]|[-*+]|\d+[.)]))\s+(.*)$")
+
+_STOPWORDS = {
+    "a",
+    "about",
+    "after",
+    "all",
+    "also",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "because",
+    "but",
+    "by",
+    "can",
+    "could",
+    "do",
+    "does",
+    "for",
+    "from",
+    "had",
+    "have",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "may",
+    "more",
+    "most",
+    "not",
+    "of",
+    "on",
+    "or",
+    "our",
+    "that",
+    "the",
+    "their",
+    "this",
+    "to",
+    "was",
+    "we",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    "will",
+    "would",
+    "you",
+    "your",
+}
+
+
+def _normalize_inline_text(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text.strip())
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"([,.;:!?])(\S)", r"\1 \2", cleaned)
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+    return cleaned
+
+
+def _split_sentences(text: str) -> list[str]:
+    cleaned = _normalize_inline_text(text)
+    if not cleaned:
+        return []
+    parts = [part.strip() for part in _SENTENCE_RE.split(cleaned) if part.strip()]
+    return parts if parts else [cleaned]
+
+
+def _keywords(text: str, limit: int = 4) -> list[str]:
+    tokens = [token.lower() for token in _WORD_RE.findall(text)]
+    counts = Counter(
+        token for token in tokens if len(token) > 3 and token not in _STOPWORDS
+    )
+    if not counts:
+        return []
+    ranked = [word for word, _ in counts.most_common(limit)]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for token in tokens:
+        if token in ranked and token not in seen:
+            ordered.append(token)
+            seen.add(token)
+        if len(ordered) >= limit:
+            break
+    return ordered or ranked
+
+
+def _truncate_words(text: str, limit: int) -> str:
+    words = _normalize_inline_text(text).split()
+    if len(words) <= limit:
+        return " ".join(words)
+    return " ".join(words[:limit]) + "..."
+
+
+def _rewrite_paragraph(text: str) -> str:
+    sentences = _split_sentences(text)
+    if not sentences:
+        return ""
+    rewritten = " ".join(sentences)
+    rewritten = _normalize_inline_text(rewritten)
+    if rewritten and rewritten[-1] not in ".!?":
+        rewritten += "."
+    return rewritten
+
+
+def _shorten_paragraph(text: str) -> str:
+    sentences = _split_sentences(text)
+    if not sentences:
+        return ""
+    lead = _truncate_words(sentences[0], 24)
+    keywords = _keywords(text)
+    if keywords and len(sentences) > 1:
+        return f"{lead}\n\nKey points: {', '.join(keywords)}."
+    if len(sentences) > 1:
+        return lead + ""
+    return lead
+
+
+def _expand_paragraph(text: str) -> str:
+    normalized = _rewrite_paragraph(text)
+    if not normalized:
+        return ""
+    keywords = _keywords(text)
+    if keywords:
+        tail = f"This adds context around {', '.join(keywords[:3])}."
+    else:
+        tail = "This adds context and makes the idea easier to act on."
+    return f"{normalized}\n\n{tail}"
+
+
+def _transform_inline_text(text: str, action: str) -> str:
+    if action == "shorten":
+        return _shorten_paragraph(text)
+    if action == "expand":
+        return _expand_paragraph(text)
+    return _rewrite_paragraph(text)
+
+
+def _transform_markdown_block(block: str, action: str) -> str:
+    stripped = block.strip()
+    if not stripped:
+        return ""
+    if stripped.startswith("```") and stripped.endswith("```"):
+        return block.strip()
+
+    lines = [line.rstrip() for line in block.splitlines()]
+    non_empty = [line for line in lines if line.strip()]
+    if non_empty and all(line.lstrip().startswith("#") for line in non_empty):
+        return "\n".join(_normalize_inline_text(line) for line in lines)
+
+    if non_empty and all(_TASK_PREFIX_RE.match(line) for line in non_empty):
+        transformed: list[str] = []
+        for line in lines:
+            if not line.strip():
+                transformed.append("")
+                continue
+            match = _TASK_PREFIX_RE.match(line)
+            if not match:
+                transformed.append(_normalize_inline_text(line))
+                continue
+            prefix, content = match.groups()
+            transformed_content = _transform_inline_text(content, action)
+            transformed.append(f"{prefix} {transformed_content}".rstrip())
+        return "\n".join(transformed)
+
+    paragraph = _normalize_inline_text(" ".join(line.strip() for line in lines if line.strip()))
+    return _transform_inline_text(paragraph, action)
+
+
+def local_fallback_edit(text: str, action: str, instruction: str = "") -> str:
+    """Produce a deterministic, markdown-aware local edit when no LLM is available."""
+    blocks: list[str] = []
+    current: list[str] = []
+    in_fence = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if not in_fence and current:
+                blocks.append("\n".join(current))
+                current = []
+            current.append(line)
+            in_fence = not in_fence
+            if not in_fence:
+                blocks.append("\n".join(current))
+                current = []
+            continue
+
+        if in_fence:
+            current.append(line)
+            continue
+
+        if stripped == "":
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            blocks.append("")
+            continue
+
+        current.append(line)
+
+    if current:
+        blocks.append("\n".join(current))
+
+    normalized_action = action if action in {"rewrite", "shorten", "expand"} else "rewrite"
+    transformed_blocks: list[str] = []
+    for block in blocks:
+        if block == "":
+            transformed_blocks.append("")
+        else:
+            transformed_blocks.append(_transform_markdown_block(block, normalized_action))
+
+    edited = "\n\n".join(part for part in transformed_blocks if part is not None)
+    edited = edited.strip()
+    if not edited:
+        edited = _transform_inline_text(text, normalized_action)
+
+    if instruction.strip() and normalized_action == "expand":
+        instruction_summary = _truncate_words(instruction, 18)
+        edited = f"{edited}\n\nAdded focus: {instruction_summary}."
+
+    return edited
+
+
+def looks_like_llm_error(text: str) -> bool:
+    candidate = text.strip().lower()
+    if not candidate:
+        return True
+    error_markers = (
+        "rate limit reached",
+        "no api key configured",
+        "request failed",
+        "llm request failed",
+        "llm call failed",
+        "api key",
+        "billing",
+        "quota",
+    )
+    return any(marker in candidate for marker in error_markers)
 
 
 # Resolved per-call so a per-user PathService (set after auth) routes
@@ -209,13 +460,21 @@ class EditAgent(BaseAgent):
         # Call LLM using inherited method
         self.logger.info(f"Calling LLM for {action}...")
         _chunks: list[str] = []
-        async for _c in self.stream_llm(
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
-            stage=f"edit_{action}",
-        ):
-            _chunks.append(_c)
-        response = clean_thinking_tags("".join(_chunks), self.binding, self.get_model())
+        try:
+            async for _c in self.stream_llm(
+                user_prompt=user_prompt,
+                system_prompt=system_prompt,
+                stage=f"edit_{action}",
+            ):
+                _chunks.append(_c)
+            response = clean_thinking_tags("".join(_chunks), self.binding, self.get_model())
+            if looks_like_llm_error(response):
+                raise RuntimeError(response)
+        except Exception as e:
+            # Graceful local fallback when LLM provider is not configured or fails.
+            # This keeps the Co-Writer feature usable in dev environments.
+            self.logger.warning(f"LLM call failed, using local fallback: {e}")
+            response = local_fallback_edit(text, action, instruction)
 
         # Record operation history
         history = load_history()

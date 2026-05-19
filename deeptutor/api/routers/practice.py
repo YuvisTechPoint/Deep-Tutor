@@ -10,6 +10,8 @@ Endpoints:
                                             **ephemeral, process-local cache**
                                             for scoring — they are never
                                             written to disk.
+* ``POST /api/v1/practice/hint``          — realtime, question-specific hint
+                                            (cached on the quiz; no answer leak).
 * ``POST /api/v1/practice/submit``        — score against the cached quiz,
                                             award XP, emit ledger events, then
                                             drop the cache entry.
@@ -27,15 +29,17 @@ from pydantic import BaseModel, Field
 
 from deeptutor.analytics.emit import emit_domain_event
 from deeptutor.services.gamification import get_gamification_store
-from deeptutor.services.revision import seed_from_practice_score
 from deeptutor.services.practice import (
     drop_quiz,
     generate_quiz,
+    get_question_hint,
     get_quiz,
     list_topics,
     score_quiz_against,
     store_quiz,
 )
+from deeptutor.services.practice.cache import get_cached_hint
+from deeptutor.services.revision import seed_from_practice_score
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,17 @@ class CheckResponse(BaseModel):
     correct: str
     is_correct: bool
     explanation: str
+
+
+class HintRequest(BaseModel):
+    quiz_id: str = Field(min_length=1, max_length=64)
+    question_id: str = Field(min_length=1, max_length=64)
+
+
+class HintResponse(BaseModel):
+    question_id: str
+    hint: str
+    cached: bool = False
 
 
 # ─── Milestone → topic resolution ────────────────────────────────────────────
@@ -171,6 +186,41 @@ async def questions(
         },
         "generated": True,
     }
+
+
+@router.post("/hint", response_model=HintResponse)
+async def question_hint(body: HintRequest) -> HintResponse:
+    """Generate (or return cached) tutor hint for the current question.
+
+    Hints are tailored to the question stem and options but never reveal the
+    correct letter. Cached on the quiz entry so toggling show/hide is instant.
+    """
+    questions = get_quiz(body.quiz_id)
+    if questions is None:
+        raise HTTPException(
+            status_code=410,
+            detail="Quiz expired or unknown. Refresh to generate a fresh quiz.",
+        )
+    q = next((x for x in questions if x.id == body.question_id), None)
+    if q is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Unknown question_id for this quiz.",
+        )
+    cached_before = get_cached_hint(body.quiz_id, q.id)
+    try:
+        hint = await get_question_hint(body.quiz_id, q)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Practice hint generation failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not generate a hint right now. Please try again.",
+        ) from exc
+    return HintResponse(
+        question_id=q.id,
+        hint=hint,
+        cached=cached_before is not None,
+    )
 
 
 @router.post("/check", response_model=CheckResponse)
@@ -291,6 +341,16 @@ async def submit_quiz(body: SubmitRequest) -> SubmitResponse:
             "topics": list(score.get("per_topic", {}).keys()),
         },
     )
+    try:
+        from deeptutor.api.routers.career_refresh import schedule_career_refresh
+
+        schedule_career_refresh(
+            "practice_completed",
+            awarded_xp=awarded,
+            accuracy_pct=score.get("percentage"),
+        )
+    except Exception:
+        pass
     try:
         seeded = seed_from_practice_score(score)
         if seeded:

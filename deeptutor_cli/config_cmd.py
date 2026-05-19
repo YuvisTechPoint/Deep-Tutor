@@ -52,7 +52,6 @@ def register(app: typer.Typer) -> None:
                 {
                     "ports": {
                         "backend": summary.backend_port,
-                        "frontend": summary.frontend_port,
                     },
                     "llm": llm_info,
                     "embedding": {

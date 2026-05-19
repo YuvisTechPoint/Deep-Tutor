@@ -7,14 +7,15 @@ optional fallback when local endpoints are not configured.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+import os
 
 from deeptutor.services.hf_openai_compat import (
     HF_OPENAI_COMPAT_ROUTER_BASE,
     hf_hub_token_from_env,
     normalize_hf_openai_compat_base_url,
 )
+from deeptutor.services.model_router.default_models import HF_MAIN_VLM_MODEL
 from deeptutor.services.model_router.intent import Intent
 
 _HF_BASE = HF_OPENAI_COMPAT_ROUTER_BASE
@@ -51,16 +52,29 @@ _FEATURE_ENV: dict[str, str] = {
     "vision_solver": "HF_MODEL_VISION_SOLVER",
 }
 
+# Default model per UI surface when no ``HF_MODEL_<FEATURE>`` env override is set.
+_FEATURE_DEFAULT: dict[str, str] = {
+    "chat": HF_MAIN_VLM_MODEL,
+    "tutorbot": HF_MAIN_VLM_MODEL,
+    "roadmap": HF_MAIN_VLM_MODEL,
+    "co_writer": HF_MAIN_VLM_MODEL,
+    "book": HF_MAIN_VLM_MODEL,
+    "missions": HF_MAIN_VLM_MODEL,
+    "dashboard": HF_MAIN_VLM_MODEL,
+    "career": HF_MAIN_VLM_MODEL,
+    "vision_solver": HF_MAIN_VLM_MODEL,
+}
+
 # Curated defaults from the OSS AI Tutor stack.
 _INTENT_DEFAULT: dict[Intent, str] = {
     Intent.CODING: "deepseek-ai/DeepSeek-Coder-V2-Instruct",
     Intent.MATH: "deepseek-ai/deepseek-math-7b-instruct",
-    Intent.VISION: "Qwen/Qwen2.5-VL-7B-Instruct",
+    Intent.VISION: HF_MAIN_VLM_MODEL,
     Intent.OCR: "naver-clova-ix/donut-base",
     Intent.SPEECH: "openai/whisper-large-v3",
-    Intent.CAREER: "Qwen/Qwen2.5-32B-Instruct",
-    Intent.ASSESSMENT: "Qwen/Qwen2.5-32B-Instruct",
-    Intent.GENERAL: "Qwen/Qwen2.5-32B-Instruct",
+    Intent.CAREER: HF_MAIN_VLM_MODEL,
+    Intent.ASSESSMENT: HF_MAIN_VLM_MODEL,
+    Intent.GENERAL: HF_MAIN_VLM_MODEL,
     Intent.SAFETY: "meta-llama/Llama-Guard-3-8B",
 }
 
@@ -128,7 +142,8 @@ FEATURE_SURFACE_ROLES: dict[str, dict[str, object]] = {
 }
 
 MODEL_DESCRIPTIONS: dict[str, str] = {
-    "Qwen/Qwen2.5-32B-Instruct": "Qwen2.5-32B-Instruct - Main tutor",
+    HF_MAIN_VLM_MODEL: "Qwen3.5-35B-A3B - Main tutor (text + vision)",
+    "Qwen/Qwen2.5-32B-Instruct": "Qwen2.5-32B-Instruct - Main tutor (legacy)",
     "mistralai/Mixtral-8x7B-Instruct-v0.1": "Mixtral-8x7B-Instruct - Tutor fallback",
     "deepseek-ai/DeepSeek-Coder-V2-Instruct": "DeepSeek-Coder-V2 - Coding mentor",
     "bigcode/starcoder2-15b": "StarCoder2-15B - Coding fallback",
@@ -240,8 +255,11 @@ class ModelRouter:
         resolved_intent = intent or Intent.GENERAL
         intent_routed = self.route(resolved_intent)
 
-        env_key = _FEATURE_ENV.get(feature.strip().lower(), "")
+        feature_key = feature.strip().lower()
+        env_key = _FEATURE_ENV.get(feature_key, "")
         override = (os.environ.get(env_key) or "").strip() if env_key else ""
+        if not override:
+            override = _FEATURE_DEFAULT.get(feature_key, "").strip()
         if not override:
             return intent_routed
 
@@ -257,11 +275,14 @@ class ModelRouter:
 
     def model_for_feature(self, feature: str) -> str | None:
         """Return the configured model id for a surface, or ``None`` if unset."""
-        env_key = _FEATURE_ENV.get(feature.strip().lower(), "")
-        if not env_key:
-            return None
-        override = (os.environ.get(env_key) or "").strip()
-        return override or None
+        feature_key = feature.strip().lower()
+        env_key = _FEATURE_ENV.get(feature_key, "")
+        if env_key:
+            override = (os.environ.get(env_key) or "").strip()
+            if override:
+                return override
+        default = _FEATURE_DEFAULT.get(feature_key, "").strip()
+        return default or None
 
     def all_routes(self) -> list[dict]:
         """Return metadata for all intent→model mappings (used in admin UI)."""
@@ -356,9 +377,9 @@ class ModelRouter:
         return self.route(Intent.SAFETY)
 
     def vl_config(self) -> RoutedModelConfig:
-        """Vision-language model (Qwen2.5-VL) for image understanding."""
+        """Vision-language model for image understanding."""
         env = os.environ.get("HF_MODEL_VL", "").strip()
-        model = env or "Qwen/Qwen2.5-VL-7B-Instruct"
+        model = env or HF_MAIN_VLM_MODEL
         api_base, api_key, backend, is_self_hosted = self._local_endpoint_for(Intent.VISION)
         return RoutedModelConfig(
             model=model,

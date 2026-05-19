@@ -48,6 +48,9 @@ class GamificationStatePayload(BaseModel):
     mission_completions: dict[str, str]
     level: LevelPayload
     last_synced_at: str
+    reward_xp_spent_total: int = 0
+    reward_xp_balance: int = 0
+    reward_claims: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AwardRequest(BaseModel):

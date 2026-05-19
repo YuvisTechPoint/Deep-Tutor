@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
+from pathlib import Path
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -128,7 +128,7 @@ class DomainEventStore:
                 SELECT event_id, name, schema_version, actor_id, correlation_id,
                        subject_type, subject_id, payload_json, created_at_ms, exported_at_ms
                 FROM domain_events
-                ORDER BY created_at_ms DESC
+                ORDER BY created_at_ms DESC, ROWID DESC
                 LIMIT ?
                 """,
                 (limit,),

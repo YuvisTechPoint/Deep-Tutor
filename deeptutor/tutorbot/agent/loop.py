@@ -122,6 +122,8 @@ class AgentLoop:
         self._mcp_connecting = False
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._processing_lock = asyncio.Lock()
+        self._pending_llm_error: str | None = None
+        self.last_reply_metadata: dict[str, object] = {}
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
             provider=provider,
@@ -247,6 +249,7 @@ class AgentLoop:
         self,
         initial_messages: list[dict],
         on_progress: Callable[..., Awaitable[None]] | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> tuple[str | None, list[str], list[dict]]:
         """Run the agent iteration loop."""
         messages = initial_messages
@@ -259,11 +262,30 @@ class AgentLoop:
 
             tool_defs = self.tools.get_definitions()
 
-            response = await self.provider.chat_with_retry(
-                messages=messages,
-                tools=tool_defs,
-                model=self.model,
+            use_stream = on_content_delta is not None and callable(
+                getattr(self.provider, "chat_stream", None)
             )
+            if use_stream:
+                try:
+                    response = await self.provider.chat_stream(
+                        messages=messages,
+                        tools=tool_defs,
+                        model=self.model,
+                        on_content_delta=on_content_delta,
+                    )
+                except Exception:
+                    logger.debug("chat_stream failed; falling back to chat_with_retry")
+                    response = await self.provider.chat_with_retry(
+                        messages=messages,
+                        tools=tool_defs,
+                        model=self.model,
+                    )
+            else:
+                response = await self.provider.chat_with_retry(
+                    messages=messages,
+                    tools=tool_defs,
+                    model=self.model,
+                )
 
             if response.has_tool_calls:
                 if on_progress:
@@ -294,8 +316,14 @@ class AgentLoop:
                 # Don't persist error responses to session history — they can
                 # poison the context and cause permanent 400 loops (#1303).
                 if response.finish_reason == "error":
+                    from deeptutor.tutorbot.providers.llm_errors import (
+                        friendly_llm_error_message,
+                        llm_error_code,
+                    )
+
                     logger.error("LLM returned error: {}", (clean or "")[:200])
-                    final_content = clean or "Sorry, I encountered an error calling the AI model."
+                    self._pending_llm_error = llm_error_code(clean)
+                    final_content = friendly_llm_error_message(clean)
                     break
                 messages = self.context.add_assistant_message(
                     messages,
@@ -438,7 +466,8 @@ class AgentLoop:
         self,
         msg: InboundMessage,
         session_key: str | None = None,
-        on_progress: Callable[[str], Awaitable[None]] | None = None,
+        on_progress: Callable[..., Awaitable[None]] | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
         # System messages: parse origin from chat_id ("channel:chat_id")
@@ -712,25 +741,44 @@ class AgentLoop:
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
+            on_content_delta=on_content_delta,
         )
 
-        if final_content is None:
+        mt_obj = self.tools.get("message")
+        sent_via_message = isinstance(mt_obj, MessageTool) and mt_obj._sent_in_turn
+
+        if final_content is None and not sent_via_message:
             final_content = "I've completed processing but have no response to give."
+        elif final_content is None:
+            final_content = ""
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self.sessions.save(session)
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
-        if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
+        if sent_via_message:
+            if isinstance(final_content, str) and final_content.strip():
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=final_content.strip(),
+                    metadata=msg.metadata or {},
+                )
             return None
 
         preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
+        meta: dict[str, object] = dict(msg.metadata or {})
+        if self._pending_llm_error:
+            meta["llm_error"] = True
+            meta["error_code"] = self._pending_llm_error
+            self._pending_llm_error = None
+        self.last_reply_metadata = meta
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
             content=final_content,
-            metadata=msg.metadata or {},
+            metadata=meta,
         )
 
     def _save_turn(self, session: Session, messages: list[dict], skip: int) -> None:
@@ -784,12 +832,19 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
-        on_progress: Callable[[str], Awaitable[None]] | None = None,
+        on_progress: Callable[..., Awaitable[None]] | None = None,
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
         """Process a message directly (for CLI or cron usage)."""
-        await self._connect_mcp()
-        msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
-        response = await self._process_message(
-            msg, session_key=session_key, on_progress=on_progress
-        )
-        return response.content if response else ""
+        async with self._processing_lock:
+            await self._connect_mcp()
+            msg = InboundMessage(
+                channel=channel, sender_id="user", chat_id=chat_id, content=content
+            )
+            response = await self._process_message(
+                msg,
+                session_key=session_key,
+                on_progress=on_progress,
+                on_content_delta=on_content_delta,
+            )
+            return response.content if response else ""

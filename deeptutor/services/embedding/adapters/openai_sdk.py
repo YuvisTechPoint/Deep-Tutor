@@ -50,7 +50,7 @@ class OpenAISDKEmbeddingAdapter(BaseEmbeddingAdapter):
         # OpenRouter / custom gateways often don't validate the key, but the
         # SDK refuses to construct without one. Use a placeholder when empty.
         return AsyncOpenAI(
-            api_key=self.api_key or "",
+            api_key=str(self.api_key or "").strip() or "sk-no-key-required",
             base_url=self.base_url,
             timeout=max(self.request_timeout, 60),
             default_headers=(

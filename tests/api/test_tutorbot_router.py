@@ -75,6 +75,10 @@ def _make_fake_manager(existing: dict | None = None):
                     setattr(base, key, overrides[key])
             return base
 
+        def save_bot_config(self, bot_id: str, config: BotConfig, *, auto_start: bool = True) -> None:
+            saved["config"] = config
+            saved["auto_start"] = auto_start
+
         async def start_bot(self, bot_id: str, config: BotConfig):
             saved["config"] = config
             instance = MagicMock()

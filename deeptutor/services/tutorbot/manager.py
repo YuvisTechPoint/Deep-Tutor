@@ -199,7 +199,23 @@ class TutorBotManager:
 
     @property
     def _tutorbot_dir(self) -> Path:
-        return self._path_service.project_root / "data" / "tutorbot"
+        """Per-user TutorBot storage.
+
+        Admins use the legacy global ``data/tutorbot`` tree. Students and other
+        learners get an isolated directory under ``multi-user/{user_id}/tutorbot``
+        so demo or admin bots are never visible in their app.
+        """
+        from deeptutor.multi_user.context import get_current_user
+        from deeptutor.multi_user.paths import MULTI_USER_ROOT, ensure_user_workspace
+
+        user = get_current_user()
+        if user.is_admin:
+            root = self._path_service.project_root / "data" / "tutorbot"
+        else:
+            ensure_user_workspace(user.id)
+            root = MULTI_USER_ROOT / user.id / "tutorbot"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
 
     @property
     def _shared_memory_dir(self) -> Path:
@@ -341,12 +357,15 @@ class TutorBotManager:
         bot_dir = self._bot_dir(bot_id)
         bot_dir.mkdir(parents=True, exist_ok=True)
         path = bot_dir / "config.yaml"
+        from deeptutor.multi_user.context import get_current_user
+
         data: dict[str, Any] = {
             "name": config.name,
             "description": config.description,
             "persona": config.persona,
             "channels": config.channels,
             "auto_start": auto_start,
+            "owner_user_id": get_current_user().id,
         }
         if config.model:
             data["model"] = config.model
@@ -877,8 +896,9 @@ class TutorBotManager:
         content: str,
         chat_id: str = "web",
         on_progress: Callable[[str], Awaitable[None]] | None = None,
-    ) -> str:
-        """Send a message to a running bot and return the response."""
+        on_content_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> tuple[str, dict[str, object]]:
+        """Send a message to a running bot and return the response plus reply metadata."""
         instance = self._bots.get(bot_id)
         if not instance or not instance.running:
             raise RuntimeError(f"Bot '{bot_id}' is not running")
@@ -895,7 +915,9 @@ class TutorBotManager:
             channel="web",
             chat_id=chat_id,
             on_progress=_progress,
+            on_content_delta=on_content_delta,
         )
+        reply_meta = dict(instance.agent_loop.last_reply_metadata or {})
 
         # Forward the reply to any bound external channels so mobile users
         # see the web-originated conversation in their chat app.
@@ -920,7 +942,7 @@ class TutorBotManager:
                             bot_id,
                         )
 
-        return response
+        return response, reply_meta
 
     async def auto_start_bots(self) -> None:
         """Scan persisted configs and start bots marked with auto_start: true."""

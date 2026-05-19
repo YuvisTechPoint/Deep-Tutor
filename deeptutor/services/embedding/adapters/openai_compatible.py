@@ -26,6 +26,8 @@ class OpenAICompatibleEmbeddingAdapter(BaseEmbeddingAdapter):
     def _auth_api_key(self) -> str:
         """Return a real API key, or empty string for local providers."""
         key = str(self.api_key or "").strip()
+        if not key:
+            return "sk-no-key-required"
         return key
 
     @staticmethod
@@ -141,7 +143,7 @@ class OpenAICompatibleEmbeddingAdapter(BaseEmbeddingAdapter):
         if self.api_version:
             if api_key:
                 headers["api-key"] = api_key
-        elif api_key:
+        elif api_key and api_key != "sk-no-key-required":
             headers["Authorization"] = f"Bearer {api_key}"
         headers.update({str(k): str(v) for k, v in self.extra_headers.items()})
 

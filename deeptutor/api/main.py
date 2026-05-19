@@ -1,5 +1,5 @@
-from contextlib import asynccontextmanager
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
 
@@ -108,14 +108,11 @@ def _split_origins(value: str | None) -> list[str]:
 
 
 def _build_cors_settings() -> dict[str, object]:
-    """Build CORS settings for both localhost and remote Docker deployments."""
-    frontend_port = os.getenv("FRONTEND_PORT", "3782").strip() or "3782"
+    """Build CORS settings for mobile/web clients and remote Docker deployments."""
     extra_origins = _split_origins(os.getenv("CORS_ORIGIN")) + _split_origins(
         os.getenv("CORS_ORIGINS")
     )
     origins = [
-        f"http://localhost:{frontend_port}",
-        f"http://127.0.0.1:{frontend_port}",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
@@ -123,11 +120,14 @@ def _build_cors_settings() -> dict[str, object]:
         if origin not in origins:
             origins.append(origin)
 
-    # Auth is disabled by default. In that local/single-user mode, mirror the
-    # pre-v1.3.8 behavior and allow remote Docker/LAN origins out of the box.
-    # When auth is enabled, require explicit CORS_ORIGIN(S) for credentialed
-    # cross-origin requests.
-    allow_origin_regex = None if _env_truthy(os.getenv("AUTH_ENABLED")) else r"https?://.*"
+    # Auth is disabled by default. In that local/single-user mode, allow remote
+    # Docker/LAN browser origins out of the box. When auth is enabled, still allow
+    # localhost dev ports while keeping explicit CORS_ORIGIN(S) for deployments.
+    allow_origin_regex = (
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+        if _env_truthy(os.getenv("AUTH_ENABLED"))
+        else r"https?://.*"
+    )
     return {"allow_origins": origins, "allow_origin_regex": allow_origin_regex}
 
 
@@ -308,8 +308,10 @@ from deeptutor.api.routers import (
     auth,
     book,
     career,
+    career_updates,
     chat,
     co_writer,
+    coding_practice,
     dashboard,
     diagnostic,
     domain_events_admin,
@@ -319,6 +321,7 @@ from deeptutor.api.routers import (
     learning_graph,
     learning_plan,
     learning_profile,
+    live_session_prep,
     memory,
     missions,
     model_routing,
@@ -462,6 +465,12 @@ app.include_router(
     dependencies=_auth,
 )
 app.include_router(
+    live_session_prep.router,
+    prefix="/api/v1/live-session",
+    tags=["live-session"],
+    dependencies=_auth,
+)
+app.include_router(
     learning_graph.router,
     prefix="/api/v1/learning/graph",
     tags=["learning-graph"],
@@ -480,6 +489,11 @@ app.include_router(
     dependencies=_auth,
 )
 app.include_router(
+    career_updates.router,
+    prefix="/api/v1/career",
+    tags=["career"],
+)
+app.include_router(
     analytics.router,
     prefix="/api/v1/analytics",
     tags=["analytics"],
@@ -495,6 +509,12 @@ app.include_router(
     practice.router,
     prefix="/api/v1/practice",
     tags=["practice"],
+    dependencies=_auth,
+)
+app.include_router(
+    coding_practice.router,
+    prefix="/api/v1/coding-practice",
+    tags=["coding-practice"],
     dependencies=_auth,
 )
 app.include_router(

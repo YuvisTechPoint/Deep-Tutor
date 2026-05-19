@@ -40,7 +40,11 @@ def cleanup_failed_version_dir(storage_dir: Path) -> bool:
 def resolve_add_storage_plan(kb_dir: Path, signature: EmbeddingSignature | None) -> AddStoragePlan:
     """Choose existing/new storage dirs for incremental adds."""
     matching_version = find_matching_version(kb_dir, signature) if signature is not None else None
-    existing_storage = Path(str(matching_version["storage_path"])) if matching_version else None
+    existing_storage: Path | None = None
+    if matching_version:
+        storage_path = matching_version.get("storage_path") or matching_version.get("version_path")
+        if storage_path:
+            existing_storage = Path(str(storage_path))
 
     if matching_version and matching_version.get("layout") == "flat":
         return AddStoragePlan(existing_storage=existing_storage, storage_dir=existing_storage)

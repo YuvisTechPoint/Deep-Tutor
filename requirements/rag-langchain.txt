@@ -1,0 +1,6 @@
+# Optional LangChain RAG stack — mirrors pyproject [project.optional-dependencies.rag-langchain]
+langchain-core>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+langchain-openai>=0.2.0,<0.4.0
+langchain-text-splitters>=0.3.0,<0.4.0
+faiss-cpu>=1.8.0,<2.0.0

@@ -1,0 +1,175 @@
+{
+  "@@locale": "en",
+
+  "appName": "DeepTutor",
+  "@appName": { "description": "Application name" },
+
+  "welcomeBack": "Welcome back",
+  "signIn": "Sign In",
+  "signOut": "Sign Out",
+  "register": "Create Account",
+  "username": "Username",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+
+  "home": "Home",
+  "chat": "Chat",
+  "learn": "Learn",
+  "profile": "Profile",
+  "missions": "Missions",
+  "career": "Career",
+  "practice": "Practice",
+  "settings": "Settings",
+
+  "goodMorning": "Good morning",
+  "goodAfternoon": "Good afternoon",
+  "goodEvening": "Good evening",
+
+  "xpEarned": "{xp} XP earned",
+  "@xpEarned": {
+    "placeholders": {
+      "xp": { "type": "int" }
+    }
+  },
+
+  "streakDays": "{days} day streak",
+  "@streakDays": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+
+  "level": "Level {level}",
+  "@level": {
+    "placeholders": {
+      "level": { "type": "int" }
+    }
+  },
+
+  "startQuiz": "Start Quiz",
+  "submitQuiz": "Submit",
+  "nextQuestion": "Next",
+  "previousQuestion": "Previous",
+  "getHint": "Get a hint",
+
+  "newChat": "New Chat",
+  "askTutor": "Ask your AI tutor...",
+  "aiThinking": "AI is thinking...",
+
+  "onboardingWelcome": "Welcome to DeepTutor!",
+  "onboardingSubtitle": "Let's personalize your learning experience",
+
+  "continueButton": "Continue",
+  "backButton": "Back",
+  "finishButton": "Finish",
+
+  "errorGeneric": "Something went wrong. Please try again.",
+  "errorQuizExpired": "Quiz expired. Please fetch new questions.",
+  "retry": "Try Again",
+
+  "careerPaths": "Career Paths",
+  "readiness": "Readiness",
+  "recommended": "Recommended",
+
+  "todaysMissions": "Today's Missions",
+  "allMissionsComplete": "All missions completed!",
+  "markComplete": "Mark Complete",
+
+  "language": "Language",
+  "theme": "Theme",
+  "notifications": "Notifications",
+  "appVersion": "App Version",
+  "privacyPolicy": "Privacy Policy",
+  "changePassword": "Change Password",
+
+  "updateProfile": "Update Learning Profile",
+  "learningIdentity": "Learning Identity",
+  "careerPath": "Career Path",
+  "weeklyHours": "Weekly Hours",
+  "experienceLevel": "Experience Level",
+  "learningStyle": "Learning Style",
+
+  "noChatsYet": "No chats yet",
+  "startConversation": "Start a new conversation with your AI tutor",
+
+  "knowledgeBases": "Knowledge bases",
+  "createKnowledgeBase": "Create knowledge base",
+  "noKnowledgeBases": "No knowledge bases yet",
+  "uploadFiles": "Upload files",
+  "reindex": "Reindex",
+  "supportedFileTypes": "Supported file types",
+
+  "space": "Space",
+  "sessions": "Sessions",
+  "notebooks": "Notebooks",
+  "questions": "Questions",
+  "skills": "Skills",
+  "memory": "Memory",
+
+  "advancedSettings": "Advanced settings",
+  "modelRouting": "Model routing",
+  "billing": "Billing",
+  "subscribe": "Subscribe",
+  "currentSubscription": "Current subscription",
+  "safetyScreening": "Safety screening",
+  "safetyScreeningSubtitle": "Pre-check messages with /safety/moderate before send",
+
+  "codeLab": "Code Lab",
+  "runCode": "Run",
+  "submitCode": "Submit",
+  "examMode": "Exam mode",
+  "violationDetected": "Violation detected",
+
+  "revision": "Revision",
+  "again": "Again",
+  "hard": "Hard",
+  "good": "Good",
+  "easy": "Easy",
+
+  "roadmap": "Roadmap",
+  "milestone": "Milestone",
+
+  "progress": "Progress",
+  "achievements": "Achievements",
+  "leaderboard": "Leaderboard",
+  "xpTrend": "XP trend",
+  "topicMastery": "Topic mastery",
+  "weakAreas": "Weak areas",
+  "claim": "Claim",
+
+  "tutorBots": "TutorBots",
+  "newTutorBot": "New TutorBot",
+  "talkToBot": "Talk to your bot…",
+
+  "coWriter": "Co-Writer",
+  "newDocument": "New document",
+  "aiAssist": "Ask AI to edit…",
+  "exportMarkdown": "Export markdown",
+
+  "books": "Books",
+  "page": "Page",
+  "checkAnswer": "Check",
+
+  "whiteboard": "Whiteboard",
+  "startRecording": "Start recording",
+  "stopRecording": "Stop recording",
+
+  "mentorPortal": "Mentor portal",
+  "students": "Students",
+  "interventions": "Interventions",
+  "messages": "Messages",
+  "cohortAnalytics": "Cohort analytics",
+
+  "recruiterPortal": "Recruiter portal",
+  "searchCandidates": "Search candidates…",
+  "shortlists": "Shortlists",
+
+  "eipProfile": "EIP profile",
+  "myEipProfile": "My EIP profile",
+  "publicProfile": "Public profile",
+  "shareLink": "Share link",
+
+  "biometricUnlock": "Biometric unlock",
+  "deepLinks": "Deep links",
+  "save": "Save"
+}

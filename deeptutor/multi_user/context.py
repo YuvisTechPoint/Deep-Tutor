@@ -27,14 +27,19 @@ def get_current_user_or_none() -> CurrentUser | None:
     return _current_user.get()
 
 
+_VALID_ROLES: frozenset[str] = frozenset(
+    {"admin", "user", "student", "mentor", "recruiter", "institution"},
+)
+
+
 def user_from_token_payload(payload: Any | None) -> CurrentUser:
     if payload is None:
         return local_admin_user()
     user_id = str(getattr(payload, "user_id", "") or "")
     username = str(getattr(payload, "username", "") or "local")
-    role = str(getattr(payload, "role", "user") or "user")
-    if role not in {"admin", "user"}:
-        role = "user"
+    role = str(getattr(payload, "role", "student") or "student")
+    if role not in _VALID_ROLES:
+        role = "student"
     if not user_id:
         user_id = "local-admin" if role == "admin" and username == "local" else username
     return CurrentUser(

@@ -15,9 +15,13 @@ from .models import Role
 
 logger = logging.getLogger(__name__)
 
+ALL_ROLES: frozenset[str] = frozenset(
+    {"admin", "user", "student", "mentor", "recruiter", "institution"},
+)
+
 # Serialises writes to USERS_FILE so a concurrent burst of /register requests
 # cannot all see ``not users`` and each promote themselves to admin. Single-
-# process FastAPI deployments (the start_web.py launcher) are fully covered;
+# process FastAPI deployments are fully covered;
 # multi-worker deployments still race and must rely on an external user store
 # (e.g. PocketBase), which is documented in the multi-user README.
 _USERS_WRITE_LOCK = threading.Lock()
@@ -44,7 +48,7 @@ def _canonical_record(
     username: str,
     value: Any,
     *,
-    default_role: Role = "user",
+    default_role: Role = "student",
 ) -> dict[str, Any] | None:
     if isinstance(value, str):
         return {
@@ -60,7 +64,7 @@ def _canonical_record(
     if not hashed:
         return None
     role = str(value.get("role") or default_role)
-    if role not in {"admin", "user"}:
+    if role not in ALL_ROLES:
         role = default_role
     return {
         "id": str(value.get("id") or new_user_id()),
@@ -91,8 +95,8 @@ def _migrate_legacy_users() -> dict[str, dict[str, Any]] | None:
     legacy = _read_json(LEGACY_USERS_FILE)
     users: dict[str, dict[str, Any]] = {}
     for username, value in legacy.items():
-        role: Role = "admin" if not users else "user"
-        if isinstance(value, dict) and str(value.get("role") or "") in {"admin", "user"}:
+        role: Role = "admin" if not users else "student"
+        if isinstance(value, dict) and str(value.get("role") or "") in ALL_ROLES:
             role = str(value.get("role"))  # type: ignore[assignment]
         record = _canonical_record(username, value, default_role=role)
         if record is not None:
@@ -138,8 +142,8 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
     canonical: dict[str, dict[str, Any]] = {}
     changed = False
     for index, (username, value) in enumerate(users.items()):
-        role: Role = "admin" if index == 0 else "user"
-        if isinstance(value, dict) and str(value.get("role") or "") in {"admin", "user"}:
+        role: Role = "admin" if index == 0 else "student"
+        if isinstance(value, dict) and str(value.get("role") or "") in ALL_ROLES:
             role = str(value.get("role"))  # type: ignore[assignment]
         record = _canonical_record(str(username), value, default_role=role)
         if record is None:
@@ -168,7 +172,32 @@ def load_users(  # nosec B107 - empty defaults mean "no env fallback supplied".
     return {}
 
 
-def save_user(username: str, hashed_password: str, role: Role = "user") -> dict[str, Any]:
+class BootstrapRegisterError(Exception):
+    """Raised when bootstrap registration cannot proceed."""
+
+
+def bootstrap_register(username: str, hashed_password: str) -> dict[str, Any]:
+    """Atomically create the first admin account. Fails if any user already exists."""
+    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with _USERS_WRITE_LOCK:
+        users = load_users()
+        if users:
+            raise BootstrapRegisterError("bootstrap_closed")
+        if username in users:
+            raise BootstrapRegisterError("username_taken")
+        record = {
+            "id": new_user_id(),
+            "hash": hashed_password,
+            "role": "admin",
+            "created_at": utc_now(),
+            "disabled": False,
+        }
+        users[username] = record
+        _write_users(users)
+    return record
+
+
+def save_user(username: str, hashed_password: str, role: Role = "student") -> dict[str, Any]:
     USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Read-modify-write must be atomic so concurrent first-time registrations
     # cannot each see an empty store and each promote themselves to admin.
@@ -196,7 +225,7 @@ def list_user_info(  # nosec B107 - empty defaults mean "no env fallback supplie
         {
             "id": record.get("id", ""),
             "username": username,
-            "role": record.get("role", "user"),
+            "role": record.get("role", "student"),
             "created_at": record.get("created_at", ""),
             "disabled": bool(record.get("disabled", False)),
         }
@@ -227,8 +256,8 @@ def delete_user(username: str) -> bool:
 
 
 def set_role(username: str, role: Role) -> bool:
-    if role not in {"admin", "user"}:
-        raise ValueError("role must be 'admin' or 'user'")
+    if role not in ALL_ROLES:
+        raise ValueError(f"role must be one of: {', '.join(sorted(ALL_ROLES))}")
     if not USERS_FILE.exists():
         return False
     users = load_users()

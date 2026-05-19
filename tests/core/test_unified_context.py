@@ -103,6 +103,20 @@ class TestUnifiedContext:
         assert ctx_none.enabled_tools is None
         assert ctx_empty.enabled_tools == []
 
+    def test_content_and_history_aliases(self) -> None:
+        ctx = UnifiedContext(
+            user_message="hello",
+            conversation_history=[{"role": "user", "content": "previous"}],
+        )
+        assert ctx.content == "hello"
+        assert ctx.history == [{"role": "user", "content": "previous"}]
+
+        ctx.content = "updated"
+        ctx.history = [{"role": "assistant", "content": "reply"}]
+
+        assert ctx.user_message == "updated"
+        assert ctx.conversation_history == [{"role": "assistant", "content": "reply"}]
+
 
 # ---------------------------------------------------------------------------
 # StreamEvent

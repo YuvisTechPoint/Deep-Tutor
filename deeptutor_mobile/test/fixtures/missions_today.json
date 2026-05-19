@@ -1,0 +1,28 @@
+{
+  "missions": [
+    {
+      "id": "mission-practice-1",
+      "title": "Complete a practice quiz",
+      "description": "Answer 5 questions on any topic",
+      "xp": 50,
+      "status": "pending",
+      "category": "Practice",
+      "duration": "8–10 min",
+      "cta_href": "/practice"
+    },
+    {
+      "id": "mission-chat-1",
+      "title": "Ask your tutor",
+      "description": "Start a tutoring session",
+      "xp_reward": 30,
+      "status": "completed",
+      "category": "Tutor",
+      "duration": "15–20 min",
+      "cta_href": "/chat"
+    }
+  ],
+  "totals": {
+    "completed": 1,
+    "total": 2
+  }
+}

@@ -19,6 +19,7 @@ import json_repair
 from openai import AsyncOpenAI
 
 from deeptutor.services.llm.capabilities import disable_response_format_at_runtime
+from deeptutor.services.llm.openai_error_message import user_message_from_openai_exception
 from deeptutor.services.llm.openai_http_client import openai_client_kwargs
 from deeptutor.services.llm.provider_core.base import LLMProvider, LLMResponse, ToolCallRequest
 from deeptutor.services.llm.provider_core.openai_responses import (
@@ -649,10 +650,9 @@ class OpenAICompatProvider(LLMProvider):
             or getattr(e, "body", None)
             or getattr(getattr(e, "response", None), "text", None)
         )
-        body_text = body if isinstance(body, str) else str(body) if body is not None else ""
-        msg = (
-            f"Error: {body_text.strip()[:500]}" if body_text.strip() else f"Error calling LLM: {e}"
-        )
+        msg = user_message_from_openai_exception(e, body)
+        if len(msg) > 2000:
+            msg = msg[:2000] + "…"
         return LLMResponse(content=msg, finish_reason="error")
 
     # ------------------------------------------------------------------

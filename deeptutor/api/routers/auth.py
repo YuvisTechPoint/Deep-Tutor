@@ -1,5 +1,7 @@
 """Auth router — login, logout, status, registration, and user-management endpoints."""
 
+import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -15,6 +17,7 @@ _SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 _SAMESITE = "none" if _SECURE else "lax"
 
 from deeptutor.services.auth import (
+    AUTH_ACCESS_TOKEN_MINUTES,
     AUTH_ENABLED,
     POCKETBASE_ENABLED,
     TOKEN_EXPIRE_HOURS,
@@ -36,7 +39,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _COOKIE_NAME = "dt_token"
-_COOKIE_MAX_AGE = TOKEN_EXPIRE_HOURS * 3600
+
+
+def _session_cookie_max_seconds() -> int:
+    if AUTH_ACCESS_TOKEN_MINUTES > 0:
+        return AUTH_ACCESS_TOKEN_MINUTES * 60
+    return TOKEN_EXPIRE_HOURS * 3600
+
+
+def _reject_disabled_user(record: dict) -> None:
+    if bool(record.get("disabled")):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been disabled. Contact an administrator.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +92,9 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_valid(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
+        from deeptutor.services.password_policy import validate_password_strength
+
+        validate_password_strength(v)
         return v
 
 
@@ -95,8 +112,10 @@ class SetRoleRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def role_valid(cls, v: str) -> str:
-        if v not in ("admin", "user"):
-            raise ValueError("Role must be 'admin' or 'user'")
+        from deeptutor.multi_user.identity import ALL_ROLES
+
+        if v not in ALL_ROLES:
+            raise ValueError(f"Role must be one of: {', '.join(sorted(ALL_ROLES))}")
         return v
 
 
@@ -286,6 +305,82 @@ async def mfa_activate_endpoint(
 
 
 # ---------------------------------------------------------------------------
+# User TOTP MFA (any authenticated account, local JWT mode)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/user/mfa/enroll")
+async def user_mfa_enroll(
+    payload: TokenPayload | None = Depends(require_auth),
+) -> dict:
+    """Generate a TOTP secret for the current user (not PocketBase)."""
+    if not AUTH_ENABLED or POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="User TOTP enrollment is only available in local JWT auth mode.",
+        )
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    try:
+        import pyotp
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="pyotp is not installed",
+        ) from exc
+    from deeptutor.services.user_totp import get_user_totp_state, set_user_enrollment_secret
+
+    secret = pyotp.random_base32()
+    set_user_enrollment_secret(payload.username, secret)
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=payload.username,
+        issuer_name="DeepTutor",
+    )
+    return {
+        "username": payload.username,
+        "secret": secret,
+        "otpauth_uri": uri,
+        "enabled": bool(get_user_totp_state(payload.username).get("enabled")),
+    }
+
+
+@router.post("/user/mfa/activate")
+async def user_mfa_activate(
+    body: MfaActivateRequest,
+    payload: TokenPayload | None = Depends(require_auth),
+) -> dict:
+    """Verify a TOTP code and enable MFA for this user account."""
+    if not AUTH_ENABLED or POCKETBASE_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="User TOTP is only available in local JWT auth mode.",
+        )
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    try:
+        import pyotp
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="pyotp is not installed",
+        ) from exc
+    from deeptutor.services.user_totp import activate_user_totp, get_user_totp_state
+
+    st = get_user_totp_state(payload.username)
+    secret = str(st.get("secret") or "")
+    if not secret or not pyotp.TOTP(secret).verify(body.code.strip(), valid_window=1):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code")
+    activate_user_totp(payload.username)
+    return {"ok": True, "enabled": True}
+
+
+# ---------------------------------------------------------------------------
 # Public endpoints (no auth required)
 # ---------------------------------------------------------------------------
 
@@ -324,59 +419,85 @@ async def login(body: LoginRequest, response: Response) -> dict:
     if not AUTH_ENABLED:
         return {"ok": True, "message": "Auth is disabled — no login required."}
 
-    if POCKETBASE_ENABLED:
-        # PocketBase mode: email = username field for backwards-compat with the
-        # existing LoginRequest schema; users can pass their email as "username".
-        pb_result = authenticate_pb(body.username, body.password)
-        if not pb_result:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
-            )
-        payload, pb_token = pb_result
-        response.set_cookie(
-            key=_COOKIE_NAME,
-            value=pb_token,
-            httponly=True,
-            samesite=_SAMESITE,
-            max_age=_COOKIE_MAX_AGE,
-            secure=_SECURE,
-        )
-        logger.info(f"User '{payload.username}' logged in via PocketBase (role={payload.role!r})")
-        return {
-            "ok": True,
-            "user_id": payload.user_id,
-            "username": payload.username,
-            "role": payload.role,
-            "is_admin": payload.role == "admin",
-        }
-
-    # Standard JWT + bcrypt mode
-    result = authenticate(body.username, body.password)
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-        )
-
-    token = create_token(result.username, result.role, result.user_id)
-    response.set_cookie(
-        key=_COOKIE_NAME,
-        value=token,
-        httponly=True,
-        samesite=_SAMESITE,
-        max_age=_COOKIE_MAX_AGE,
-        secure=_SECURE,
+    from deeptutor.services.login_lockout import (
+        clear_failed_attempts,
+        is_locked,
+        record_failed_attempt,
+        user_login_attempt_lock,
     )
 
-    logger.info(f"User '{result.username}' logged in (role={result.role!r})")
-    return {
-        "ok": True,
-        "user_id": result.user_id,
-        "username": result.username,
-        "role": result.role,
-        "is_admin": result.role == "admin",
-    }
+    with user_login_attempt_lock(body.username):
+        locked, locked_until = is_locked(body.username)
+        if locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "Too many failed sign-in attempts. Try again later"
+                    + (f" (until {locked_until})" if locked_until else "")
+                    + "."
+                ),
+            )
+
+        if POCKETBASE_ENABLED:
+            # PocketBase mode: email = username field for backwards-compat with the
+            # existing LoginRequest schema; users can pass their email as "username".
+            pb_result = authenticate_pb(body.username, body.password)
+            if not pb_result:
+                record_failed_attempt(body.username)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect email or password",
+                )
+            payload, pb_token = pb_result
+            clear_failed_attempts(body.username)
+            response.set_cookie(
+                key=_COOKIE_NAME,
+                value=pb_token,
+                httponly=True,
+                samesite=_SAMESITE,
+                max_age=_session_cookie_max_seconds(),
+                secure=_SECURE,
+            )
+            logger.info(f"User '{payload.username}' logged in via PocketBase (role={payload.role!r})")
+            return {
+                "ok": True,
+                "user_id": payload.user_id,
+                "username": payload.username,
+                "role": payload.role,
+                "is_admin": payload.role == "admin",
+                "access_token": pb_token,
+            }
+
+        # Standard JWT + bcrypt mode
+        result = authenticate(body.username, body.password)
+        if not result:
+            record_failed_attempt(body.username)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+            )
+
+        clear_failed_attempts(result.username)
+
+        token = create_token(result.username, result.role, result.user_id)
+        response.set_cookie(
+            key=_COOKIE_NAME,
+            value=token,
+            httponly=True,
+            samesite=_SAMESITE,
+            max_age=_session_cookie_max_seconds(),
+            secure=_SECURE,
+        )
+
+        logger.info(f"User '{result.username}' logged in (role={result.role!r})")
+        return {
+            "ok": True,
+            "user_id": result.user_id,
+            "username": result.username,
+            "role": result.role,
+            "is_admin": result.role == "admin",
+            "access_token": token,
+        }
 
 
 @router.post("/logout")
@@ -403,6 +524,14 @@ async def register(body: RegisterRequest) -> dict:
             detail="Auth is disabled — registration is not available.",
         )
 
+    from deeptutor.services.password_policy import password_is_pwned
+
+    if await password_is_pwned(body.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password appears in known data breaches. Choose a different password.",
+        )
+
     if POCKETBASE_ENABLED:
         # PocketBase deployments are documented as single-user. Keep registration
         # closed and require admins to provision users in the PocketBase admin UI.
@@ -422,33 +551,36 @@ async def register(body: RegisterRequest) -> dict:
             "ok": True,
             "user_id": result.get("id", ""),
             "username": body.username,
-            "role": "user",
+            "role": "student",
             "is_first_user": True,
             "is_admin": False,
         }
 
-    # Standard mode — only allowed before the first admin exists.
-    if not is_first_user():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Self-registration is closed. Ask an administrator to create your account.",
-        )
+    # Standard mode — atomically create the first admin (closes registration).
+    from deeptutor.multi_user.identity import BootstrapRegisterError, bootstrap_register
+    from deeptutor.services.auth import hash_password
 
-    existing = {u["username"] for u in list_users()}
-    if body.username in existing:
+    try:
+        record = bootstrap_register(body.username, hash_password(body.password))
+    except BootstrapRegisterError as exc:
+        code = str(exc)
+        if code == "bootstrap_closed":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Self-registration is closed. Ask an administrator to create your account.",
+            ) from exc
+        if code == "username_taken":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already taken",
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already taken",
-        )
+            detail="Registration failed",
+        ) from exc
 
-    add_user(body.username, body.password)
-    user_id = ""
-    role = "user"
-    for item in list_users():
-        if item.get("username") == body.username:
-            user_id = str(item.get("id") or "")
-            role = str(item.get("role") or "user")
-            break
+    role = str(record.get("role") or "admin")
+    user_id = str(record.get("id") or "")
     logger.info(f"First user (admin) registered: '{body.username}'")
     return {
         "ok": True,
@@ -467,10 +599,7 @@ async def check_is_first_user() -> dict:
 
 
 def _firebase_project_id() -> str:
-    return (
-        os.getenv("FIREBASE_PROJECT_ID", "").strip()
-        or os.getenv("NEXT_PUBLIC_FIREBASE_PROJECT_ID", "").strip()
-    )
+    return os.getenv("FIREBASE_PROJECT_ID", "").strip()
 
 
 def _verify_firebase_id_token(id_token: str) -> dict[str, object]:
@@ -488,7 +617,7 @@ def _verify_firebase_id_token(id_token: str) -> dict[str, object]:
     if not project_id:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Set FIREBASE_PROJECT_ID or NEXT_PUBLIC_FIREBASE_PROJECT_ID for Firebase sign-in.",
+            detail="Set FIREBASE_PROJECT_ID for Firebase sign-in.",
         )
 
     if not firebase_admin._apps:
@@ -563,8 +692,9 @@ async def firebase_sign_in(body: FirebaseSignInRequest, response: Response) -> d
             )
         logger.info("First user provisioned via Firebase: %r", email)
 
+    _reject_disabled_user(match)
     username = str(match.get("username") or email)
-    role = str(match.get("role") or "user")
+    role = str(match.get("role") or "student")
     user_id = str(match.get("id") or "")
     jwt_token = create_token(username, role, user_id)
     response.set_cookie(
@@ -572,7 +702,7 @@ async def firebase_sign_in(body: FirebaseSignInRequest, response: Response) -> d
         value=jwt_token,
         httponly=True,
         samesite=_SAMESITE,
-        max_age=_COOKIE_MAX_AGE,
+        max_age=_session_cookie_max_seconds(),
         secure=_SECURE,
     )
     logger.info("User %r signed in via Firebase ID token", username)
@@ -592,6 +722,49 @@ class GoogleOAuthExchangeRequest(BaseModel):
     state: str | None = Field(default=None, max_length=2048)
 
 
+def _oauth_state_secret() -> str:
+    from deeptutor.services.auth import AUTH_SECRET
+
+    if AUTH_SECRET:
+        return AUTH_SECRET
+    from deeptutor.multi_user.identity import load_or_create_auth_secret
+
+    return load_or_create_auth_secret()
+
+
+def issue_google_oauth_state() -> str:
+    """Return an HMAC-signed OAuth state nonce (binds callback to our auth secret)."""
+    nonce = secrets.token_urlsafe(16)
+    sig = hmac.new(
+        _oauth_state_secret().encode(),
+        nonce.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+    return f"{nonce}.{sig}"
+
+
+def verify_google_oauth_state(state: str | None) -> bool:
+    if not state or "." not in state:
+        return False
+    nonce, sig = state.rsplit(".", 1)
+    if not nonce or not sig:
+        return False
+    expected = hmac.new(
+        _oauth_state_secret().encode(),
+        nonce.encode(),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+    return hmac.compare_digest(sig, expected)
+
+
+@router.get("/oauth/google/state")
+async def google_oauth_state() -> dict:
+    """Issue a server-signed OAuth ``state`` for the Google redirect (CSRF protection)."""
+    if not AUTH_ENABLED:
+        return {"state": ""}
+    return {"state": issue_google_oauth_state()}
+
+
 @router.post("/oauth/google/callback")
 async def google_oauth_exchange(
     body: GoogleOAuthExchangeRequest,
@@ -601,7 +774,9 @@ async def google_oauth_exchange(
 
     Requires ``GOOGLE_OAUTH_CLIENT_ID``, ``GOOGLE_OAUTH_CLIENT_SECRET``, and
     ``GOOGLE_OAUTH_REDIRECT_URI`` in the environment. The Google account email
-    must match an existing local ``username`` (typically the same email string).
+    must match an existing local ``username`` (typically the same email string),
+    unless the user store is empty — then the first Google sign-in provisions
+    an admin account (same rule as Firebase sign-in).
     """
     if not AUTH_ENABLED:
         return {"ok": True, "message": "Auth is disabled — no session cookie set."}
@@ -610,6 +785,12 @@ async def google_oauth_exchange(
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Google web OAuth is not wired for PocketBase mode; use PocketBase auth.",
+        )
+
+    if not verify_google_oauth_state(body.state):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or missing OAuth state",
         )
 
     client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
@@ -675,16 +856,31 @@ async def google_oauth_exchange(
             match = row
             break
     if not match:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "No local account matches this Google email. "
-                "Use an admin-created username equal to your Google email, or register first."
-            ),
-        )
+        if not is_first_user():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "No local account matches this Google email. "
+                    "Use an admin-created username equal to your Google email, or register first."
+                ),
+            )
+        temp_password = secrets.token_urlsafe(24)
+        add_user(email, temp_password)
+        for row in list_users():
+            un = (row.get("username") or "").strip().lower()
+            if un == email:
+                match = row
+                break
+        if not match:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to provision first user from Google OAuth",
+            )
+        logger.info("First user provisioned via Google OAuth: %r", email)
 
+    _reject_disabled_user(match)
     username = str(match.get("username") or "")
-    role = str(match.get("role") or "user")
+    role = str(match.get("role") or "student")
     user_id = str(match.get("id") or "")
     jwt_token = create_token(username, role, user_id)
     response.set_cookie(
@@ -692,7 +888,7 @@ async def google_oauth_exchange(
         value=jwt_token,
         httponly=True,
         samesite=_SAMESITE,
-        max_age=_COOKIE_MAX_AGE,
+        max_age=_session_cookie_max_seconds(),
         secure=_SECURE,
     )
     logger.info("User %r signed in via Google OAuth", username)
@@ -724,13 +920,21 @@ async def admin_create_user(
     """Admin-only: create a new user account.
 
     Replaces the public ``/register`` flow once the first admin exists. The
-    new account is always created with role=``user``; admins can promote
-    later via ``PUT /users/{username}/role``.
+    new account defaults to role ``student``; admins can change it later via
+    ``PUT /users/{username}/role``.
     """
     if not AUTH_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Auth is disabled — user creation is not available.",
+        )
+
+    from deeptutor.services.password_policy import password_is_pwned
+
+    if await password_is_pwned(body.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password appears in known data breaches. Choose a different password.",
         )
 
     if POCKETBASE_ENABLED:
@@ -748,7 +952,7 @@ async def admin_create_user(
             "ok": True,
             "user_id": result.get("id", ""),
             "username": body.username,
-            "role": "user",
+            "role": "student",
             "is_admin": False,
         }
 
@@ -761,11 +965,11 @@ async def admin_create_user(
 
     add_user(body.username, body.password)
     user_id = ""
-    role = "user"
+    role = "student"
     for item in list_users():
         if item.get("username") == body.username:
             user_id = str(item.get("id") or "")
-            role = str(item.get("role") or "user")
+            role = str(item.get("role") or "student")
             break
     logger.info(
         f"Admin '{current.username if current else 'local'}' created user '{body.username}' "

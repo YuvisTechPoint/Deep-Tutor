@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
+from pathlib import Path
 import sqlite3
 import threading
 import time
-import uuid
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+import uuid
 
 from deeptutor.services.path_service import get_path_service
 
@@ -165,9 +165,10 @@ def _db_path() -> Path:
 
 def get_revision_store() -> RevisionStore:
     global _store
+    path = _db_path()
     with _lock:
-        if _store is None:
-            _store = RevisionStore(_db_path())
+        if _store is None or _store._db_path.resolve() != path.resolve():
+            _store = RevisionStore(path)
         return _store
 
 

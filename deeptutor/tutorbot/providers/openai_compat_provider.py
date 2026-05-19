@@ -17,8 +17,10 @@ import uuid
 import json_repair
 from openai import AsyncOpenAI
 
+from deeptutor.services.llm.openai_error_message import user_message_from_openai_exception
 from deeptutor.services.llm.openai_http_client import openai_client_kwargs
 from deeptutor.tutorbot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+from deeptutor.tutorbot.providers.tool_call_utils import normalize_tool_invocation
 
 if TYPE_CHECKING:
     from deeptutor.tutorbot.providers.registry import ProviderSpec
@@ -379,12 +381,18 @@ class OpenAICompatProvider(LLMProvider):
         for tc in raw_tool_calls:
             args = tc.function.arguments
             if isinstance(args, str):
-                args = json_repair.loads(args)
+                args = json_repair.loads(args) if args and args.strip() else {}
+            elif args is None:
+                args = {}
+            elif not isinstance(args, dict):
+                args = {}
+            raw_name = getattr(tc.function, "name", None) or ""
+            norm_name, norm_args = normalize_tool_invocation(str(raw_name), args)
             tool_calls.append(
                 ToolCallRequest(
                     id=_short_tool_id(),
-                    name=tc.function.name,
-                    arguments=args if isinstance(args, dict) else {},
+                    name=norm_name,
+                    arguments=norm_args,
                     provider_specific_fields=getattr(tc, "provider_specific_fields", None) or None,
                     function_provider_specific_fields=(
                         getattr(tc.function, "provider_specific_fields", None) or None
@@ -462,16 +470,26 @@ class OpenAICompatProvider(LLMProvider):
         content = "".join(content_parts) or None
         reasoning_content = "".join(reasoning_parts) or None
 
-        return LLMResponse(
-            content=content,
-            tool_calls=[
+        merged_tool_calls: list[ToolCallRequest] = []
+        for b in tc_bufs.values():
+            raw_args = b["arguments"]
+            args: dict[str, Any] = (
+                json_repair.loads(raw_args) if isinstance(raw_args, str) and raw_args.strip() else {}
+            )
+            if not isinstance(args, dict):
+                args = {}
+            norm_name, norm_args = normalize_tool_invocation(str(b.get("name") or ""), args)
+            merged_tool_calls.append(
                 ToolCallRequest(
                     id=b["id"] or _short_tool_id(),
-                    name=b["name"],
-                    arguments=json_repair.loads(b["arguments"]) if b["arguments"] else {},
+                    name=norm_name,
+                    arguments=norm_args,
                 )
-                for b in tc_bufs.values()
-            ],
+            )
+
+        return LLMResponse(
+            content=content,
+            tool_calls=merged_tool_calls,
             finish_reason=finish_reason,
             usage=usage,
             reasoning_content=reasoning_content,
@@ -484,10 +502,9 @@ class OpenAICompatProvider(LLMProvider):
             or getattr(e, "body", None)
             or getattr(getattr(e, "response", None), "text", None)
         )
-        body_text = body if isinstance(body, str) else str(body) if body is not None else ""
-        msg = (
-            f"Error: {body_text.strip()[:500]}" if body_text.strip() else f"Error calling LLM: {e}"
-        )
+        msg = user_message_from_openai_exception(e, body)
+        if len(msg) > 2000:
+            msg = msg[:2000] + "…"
         return LLMResponse(content=msg, finish_reason="error")
 
     # ------------------------------------------------------------------
@@ -496,22 +513,33 @@ class OpenAICompatProvider(LLMProvider):
 
     @staticmethod
     def _is_tool_format_error(e: Exception) -> bool:
-        """Detect errors caused by strict tool-argument JSON validation.
+        """Detect errors where retrying with streaming may succeed.
 
-        Some endpoints (e.g. DashScope Coding Plan) reject non-streaming
-        tool calls with 400 when the model produces malformed arguments.
-        Streaming avoids this because the SDK accumulates tokens into a
-        well-formed response.
+        Some endpoints reject non-streaming tool calls when the model emits
+        malformed tool JSON or pseudo tool names (e.g. ``rag{...}`` as the name).
+        Streaming often yields parseable tool_calls. Groq uses
+        ``tool_use_failed`` / "not in request.tools" for invalid names.
         """
-        text = str(getattr(e, "body", None) or getattr(e, "message", None) or e).lower()
-        return any(
-            kw in text
-            for kw in (
-                "function.arguments",
-                "must be in json format",
-                "invalid.*parameter.*function",
-            )
+        parts: list[str] = [str(e)]
+        body = getattr(e, "body", None)
+        if body is not None:
+            parts.append(str(body))
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            txt = getattr(resp, "text", None)
+            if txt:
+                parts.append(str(txt))
+        text = " ".join(parts).lower()
+        keywords = (
+            "function.arguments",
+            "must be in json format",
+            "tool_use_failed",
+            "tool call validation failed",
+            "not in request.tools",
         )
+        if any(kw in text for kw in keywords):
+            return True
+        return "invalid" in text and "parameter" in text and "function" in text
 
     async def chat(
         self,

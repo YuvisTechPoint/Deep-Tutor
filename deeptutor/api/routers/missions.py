@@ -10,8 +10,8 @@ Mission state is short-lived (per-day) and persisted in the gamification store.
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -175,6 +175,37 @@ async def missions_today() -> dict:
             "xp_target": sum(m.get("xp", 0) for m in payload) + bonus["xp"],
         },
     }
+
+
+class RewardClaimRequest(BaseModel):
+    reward_id: str = Field(min_length=1, max_length=80)
+
+
+@router.get("/rewards/catalog")
+async def rewards_catalog() -> dict[str, Any]:
+    """XP redeemable merch (demo fulfillment — see reward descriptions)."""
+    store = get_gamification_store()
+    return {"rewards": store.reward_catalog()}
+
+
+@router.post("/rewards/claim")
+async def claim_reward(body: RewardClaimRequest) -> dict[str, Any]:
+    store = get_gamification_store()
+    rid = body.reward_id.strip()
+    try:
+        result = store.claim_reward(rid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    emit_domain_event(
+        "RewardClaimed",
+        subject_type="MissionReward",
+        subject_id=rid,
+        payload={
+            "xp_cost": result.get("claim", {}).get("xp_cost"),
+            "title": result.get("claim", {}).get("title"),
+        },
+    )
+    return result
 
 
 @router.post("/{mission_id}/complete")

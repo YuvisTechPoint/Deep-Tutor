@@ -211,7 +211,6 @@ def _write_yaml_if_missing(file_path: Path, payload: dict) -> None:
 # ============================================================================
 # Ports are configured via environment variables in the project .env file:
 #   BACKEND_PORT=8001   (default: 8001)
-#   FRONTEND_PORT=3782  (default: 3782)
 # ============================================================================
 
 
@@ -242,56 +241,9 @@ def get_backend_port(project_root: Path | None = None) -> int:
         return 8001
 
 
-def get_frontend_port(project_root: Path | None = None) -> int:
-    """
-    Get frontend port from .env, falling back to environment/defaults.
-
-    Preferred source: .env -> FRONTEND_PORT
-    Fallback source: process environment -> FRONTEND_PORT
-
-    Returns:
-        Frontend port number (default: 3782)
-    """
-    try:
-        from deeptutor.services.config.launch_settings import load_launch_settings
-
-        return load_launch_settings(project_root).frontend_port
-    except Exception:
-        # Preserve the historical .env fallback if runtime settings cannot load.
-        pass
-
-    env_port = get_env_store().get("FRONTEND_PORT", "3782")
-    try:
-        return int(env_port)
-    except ValueError:
-        logger = _get_setup_logger()
-        logger.warning(f"Invalid FRONTEND_PORT: {env_port}, using default 3782")
-        return 3782
-
-
-def get_ports(project_root: Path | None = None) -> tuple[int, int]:
-    """
-    Get both backend and frontend ports from configuration.
-
-    Args:
-        project_root: Project root directory (if None, will try to detect)
-
-    Returns:
-        Tuple of (backend_port, frontend_port)
-
-    Raises:
-        SystemExit: If ports are not configured
-    """
-    backend_port = get_backend_port(project_root)
-    frontend_port = get_frontend_port(project_root)
-    return (backend_port, frontend_port)
-
-
 __all__ = [
     # User directory initialization
     "init_user_directories",
     # Port configuration (from .env)
     "get_backend_port",
-    "get_frontend_port",
-    "get_ports",
 ]

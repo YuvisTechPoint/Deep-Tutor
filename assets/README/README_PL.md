@@ -123,7 +123,7 @@
 - **Centrum Wiedzy** — Bazy RAG z PDF/Markdown/DOCX, kolorowe notatniki, bank pytań, własne Skills via `SKILL.md` kształtujące styl nauczania.
 - **Długoterminowa Pamięć** — DeepTutor buduje Twój profil: czego się uczyłeś, jak uczysz, dokąd zmierzasz. Pamięć jest współdzielona przez wszystkie funkcje i TutorBoty.
 - **Osobiste TutorBoty** — To nie chatboty — to autonomiczni nauczyciele z własną przestrzenią, pamięcią, osobowością i umiejętnościami. Napędzane przez [nanobot](https://github.com/HKUDS/nanobot).
-- **CLI dla agentów** — Każda funkcja, baza wiedzy, sesja i TutorBot jednym poleceniem; Rich dla ludzi, JSON dla agentów. Daj [`SKILL.md`](../../SKILL.md) agentowi i operuje autonomicznie.
+- **CLI dla agentów** — Każda funkcja, baza wiedzy, sesja i TutorBot jednym poleceniem; Rich dla ludzi, JSON dla agentów. Daj [`SKILL.md`](../../docs/cli-skill.md) agentowi i operuje autonomicznie.
 - **Opcjonalne uwierzytelnianie** — Domyślnie wyłączone. Dwie zmienne środowiskowe włączają logowanie przy publicznym hostingu. Multi-użytkownik: bcrypt, JWT, rejestracja, panel admina. Opcjonalnie **PocketBase** jako sidecar (OAuth, lepsza współbieżność) bez zmian w kodzie.
 
 ---
@@ -376,10 +376,10 @@ Edytuj `.env` jak w Opcji B.
 **2a. Pobierz oficjalny obraz (zalecane)**
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-Aby przypiąć konkretną wersję, edytuj tag w `docker-compose.ghcr.yml`:
+Aby przypiąć konkretną wersję, edytuj tag w `docker-compose.yml (profile ghcr)`:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.3.4  # lub :latest
@@ -455,7 +455,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 <summary><b>Tryb programowania (hot-reload)</b></summary>
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 Zmiany w `deeptutor/`, `deeptutor_cli/`, `scripts/` i `web/` są odzwierciedlane natychmiast.
@@ -641,7 +641,7 @@ deeptutor bot list                  # Zobacz wszystkich aktywnych tutorów
 <img src="../../assets/figs/cli-architecture.png" alt="Architektura DeepTutor CLI" width="800">
 </div>
 
-DeepTutor jest w pełni natywny dla CLI. Każda funkcja, baza wiedzy, sesja i TutorBot jednym poleceniem — bez przeglądarki. Przekaż [`SKILL.md`](../../SKILL.md) agentowi ([nanobot](https://github.com/HKUDS/nanobot)), a będzie operować DeepTutor autonomicznie.
+DeepTutor jest w pełni natywny dla CLI. Każda funkcja, baza wiedzy, sesja i TutorBot jednym poleceniem — bez przeglądarki. Przekaż [`SKILL.md`](../../docs/cli-skill.md) agentowi ([nanobot](https://github.com/HKUDS/nanobot)), a będzie operować DeepTutor autonomicznie.
 
 ```bash
 deeptutor run chat "Explain the Fourier transform" -t rag --kb textbook

@@ -17,10 +17,11 @@ Multi-user setup (recommended):
     Navigate to /register in the browser. The first user to register is granted
     admin privileges and can manage other users from /admin/users.
 
-    Users are stored in data/user/auth_users.json:
+    Users are stored in ``multi-user/_system/auth/users.json`` (canonical) or
+    legacy ``data/user/auth_users.json`` (migrated on first read):
         {
-            "alice": {"hash": "$2b$12$...", "role": "admin", "created_at": "2026-..."},
-            "bob":   {"hash": "$2b$12$...", "role": "user",  "created_at": "2026-..."}
+            "alice@x.com": {"hash": "$2b$12$...", "role": "admin", "created_at": "2026-..."},
+            "bob@x.com":   {"hash": "$2b$12$...", "role": "student", "created_at": "2026-..."}
         }
 """
 
@@ -41,6 +42,8 @@ AUTH_USERNAME: str = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD_HASH: str = os.getenv("AUTH_PASSWORD_HASH", "")
 AUTH_SECRET: str = os.getenv("AUTH_SECRET", "")
 TOKEN_EXPIRE_HOURS: int = int(os.getenv("AUTH_TOKEN_EXPIRE_HOURS", "24"))
+# When > 0, access tokens use this many minutes instead of TOKEN_EXPIRE_HOURS (spec: 15 min).
+AUTH_ACCESS_TOKEN_MINUTES: int = int(os.getenv("AUTH_ACCESS_TOKEN_MINUTES", "0"))
 
 # PocketBase auth mode — active when POCKETBASE_URL is set AND AUTH_ENABLED=true.
 # When enabled, login/register proxy to PocketBase and token validation uses
@@ -97,7 +100,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _make_user_record(hashed: str, role: str = "user", created_at: str = "") -> dict[str, Any]:
+def _access_token_lifetime() -> timedelta:
+    if AUTH_ACCESS_TOKEN_MINUTES > 0:
+        return timedelta(minutes=AUTH_ACCESS_TOKEN_MINUTES)
+    return timedelta(hours=TOKEN_EXPIRE_HOURS)
+
+
+def _make_user_record(hashed: str, role: str = "student", created_at: str = "") -> dict[str, Any]:
     """Build a canonical user record dict for legacy callers/tests."""
     from deeptutor.multi_user.identity import new_user_id
 
@@ -131,20 +140,18 @@ def is_first_user() -> bool:
     return len(_load_users()) == 0
 
 
-def add_user(username: str, plain_password: str, role: str = "user") -> None:
+def add_user(username: str, plain_password: str, role: str = "student") -> None:
     """
-    Add or update a user in data/user/auth_users.json.
+    Add or update a user in the canonical user store.
 
-    The role defaults to 'user'. Pass role='admin' to elevate. When the store
-    is empty the first user is automatically promoted to 'admin' regardless of
-    the role argument.
-
-    Creates the file (and parent directories) if they don't exist.
+    The role defaults to ``student``. Pass ``role='admin'`` to elevate. When the
+    store is empty the first user is automatically promoted to ``admin``
+    regardless of the role argument.
     """
     from deeptutor.multi_user.identity import save_user
 
     record = save_user(username, hash_password(plain_password), role=role)  # type: ignore[arg-type]
-    logger.info("User '%s' saved with role=%r", username, record.get("role", "user"))
+    logger.info("User '%s' saved with role=%r", username, record.get("role", "student"))
 
 
 def list_users() -> list[dict]:
@@ -172,10 +179,14 @@ def set_role(username: str, role: str) -> bool:
     """
     Change the role for an existing user. Returns True on success.
 
-    Valid roles: 'admin', 'user'.
+    Valid roles: admin, user, student, mentor, recruiter, institution.
     """
-    if role not in ("admin", "user"):
-        raise ValueError(f"Invalid role: {role!r}. Must be 'admin' or 'user'.")
+    from deeptutor.multi_user.identity import ALL_ROLES
+
+    if role not in ALL_ROLES:
+        raise ValueError(
+            f"Invalid role: {role!r}. Must be one of: {', '.join(sorted(ALL_ROLES))}.",
+        )
 
     from deeptutor.multi_user.identity import set_role as _set_role
 
@@ -190,7 +201,7 @@ def set_role(username: str, role: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def create_token(username: str, role: str = "user", user_id: str | None = None) -> str:
+def create_token(username: str, role: str = "student", user_id: str | None = None) -> str:
     """Create a signed JWT for the given username and role."""
     from jose import jwt
 
@@ -202,7 +213,7 @@ def create_token(username: str, role: str = "user", user_id: str | None = None) 
         "sub": username,
         "role": role,
         "uid": user_id,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS),
+        "exp": datetime.now(timezone.utc) + _access_token_lifetime(),
         "iat": datetime.now(timezone.utc),
     }
     return jwt.encode(payload, AUTH_SECRET, algorithm=_ALGORITHM)
@@ -244,11 +255,15 @@ def decode_token(token: str) -> TokenPayload | None:
         username = payload.get("sub")
         if not username:
             return None
-        user_id = str(payload.get("uid") or "")
-        if not user_id:
-            record = _load_users().get(str(username)) or {}
-            user_id = str(record.get("id") or "")
-        return TokenPayload(username=username, role=payload.get("role", "user"), user_id=user_id)
+        record = _load_users().get(str(username))
+        if not record:
+            return None
+        if isinstance(record, dict) and record.get("disabled"):
+            logger.warning("Token rejected: disabled account %r", username)
+            return None
+        user_id = str(payload.get("uid") or record.get("id") or "")
+        role = str(record.get("role") or payload.get("role") or "student")
+        return TokenPayload(username=str(username), role=role, user_id=user_id)
     except JWTError:
         return None
 
@@ -283,7 +298,7 @@ def authenticate_pb(username: str, password: str) -> tuple[TokenPayload, str] | 
         )
         # PocketBase has no built-in "role" field by default; treat all as "user".
         # Admins authenticated via PocketBase admin panel use a separate endpoint.
-        role = getattr(record, "role", "user") or "user"
+        role = getattr(record, "role", "student") or "student"
         user_id = str(getattr(record, "id", "") or "")
         return TokenPayload(username=str(username), role=str(role), user_id=user_id), token
     except Exception as exc:
@@ -342,10 +357,14 @@ def authenticate(username: str, password: str) -> TokenPayload | None:
     if not record:
         return None
 
+    if isinstance(record, dict) and record.get("disabled"):
+        logger.warning("Login rejected: disabled account %r", username)
+        return None
+
     hashed = record.get("hash", "") if isinstance(record, dict) else record
     if not verify_password(password, hashed):
         return None
 
-    role = record.get("role", "user") if isinstance(record, dict) else "user"
+    role = record.get("role", "student") if isinstance(record, dict) else "student"
     user_id = str(record.get("id") or "") if isinstance(record, dict) else ""
     return TokenPayload(username=username, role=role, user_id=user_id)

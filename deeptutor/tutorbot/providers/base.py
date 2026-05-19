@@ -4,9 +4,16 @@ from abc import ABC, abstractmethod
 import asyncio
 from dataclasses import dataclass, field
 import json
+import re
 from typing import Any
 
 from loguru import logger
+
+from deeptutor.services.llm.openai_error_message import user_message_from_openai_exception
+from deeptutor.services.llm.rate_limit_fallback import (
+    looks_like_rate_or_quota_error,
+    rate_limit_fallback_model,
+)
 
 
 @dataclass
@@ -238,6 +245,83 @@ class LLMProvider(ABC):
         err = (content or "").lower()
         return any(marker in err for marker in cls._TRANSIENT_ERROR_MARKERS)
 
+    @classmethod
+    def _is_quota_or_daily_limit_error(cls, content: str | None) -> bool:
+        """Hard limits where short exponential backoff will not help."""
+        err = (content or "").lower()
+        if "tokens per day" in err or " per day " in err:
+            return True
+        if "rate_limit_exceeded" in err.replace(" ", "_"):
+            return True
+        # Groq TPD: "try again in 2h27m" vs burst 429 "try again in 2s"
+        if "try again in" in err and re.search(r"\d+\s*h(?:\d|\b)", err):
+            return True
+        return False
+
+    async def _chat_with_retry_for_model(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str | None,
+        resolved_max_tokens: int,
+        resolved_temperature: float,
+        resolved_reasoning_effort: str | None,
+        tool_choice: str | dict[str, Any] | None,
+    ) -> LLMResponse:
+        for attempt, delay in enumerate(self._CHAT_RETRY_DELAYS, start=1):
+            try:
+                response = await self.chat(
+                    messages=messages,
+                    tools=tools,
+                    model=model,
+                    max_tokens=resolved_max_tokens,
+                    temperature=resolved_temperature,
+                    reasoning_effort=resolved_reasoning_effort,
+                    tool_choice=tool_choice,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                response = LLMResponse(
+                    content=f"Error calling LLM: {user_message_from_openai_exception(exc)}",
+                    finish_reason="error",
+                )
+
+            if response.finish_reason != "error":
+                return response
+            if self._is_quota_or_daily_limit_error(response.content):
+                return response
+            if not self._is_transient_error(response.content):
+                return response
+
+            err = (response.content or "").lower()
+            logger.warning(
+                "LLM transient error (attempt {}/{}), retrying in {}s: {}",
+                attempt,
+                len(self._CHAT_RETRY_DELAYS),
+                delay,
+                err[:120],
+            )
+            await asyncio.sleep(delay)
+
+        try:
+            return await self.chat(
+                messages=messages,
+                tools=tools,
+                model=model,
+                max_tokens=resolved_max_tokens,
+                temperature=resolved_temperature,
+                reasoning_effort=resolved_reasoning_effort,
+                tool_choice=tool_choice,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return LLMResponse(
+                content=f"Error calling LLM: {user_message_from_openai_exception(exc)}",
+                finish_reason="error",
+            )
+
     async def chat_with_retry(
         self,
         messages: list[dict[str, Any]],
@@ -269,57 +353,38 @@ class LLMProvider(ABC):
             else None
         )
 
-        for attempt, delay in enumerate(self._CHAT_RETRY_DELAYS, start=1):
-            try:
-                response = await self.chat(
-                    messages=messages,
-                    tools=tools,
-                    model=model,
-                    max_tokens=resolved_max_tokens,
-                    temperature=resolved_temperature,
-                    reasoning_effort=resolved_reasoning_effort,
-                    tool_choice=tool_choice,
+        primary = (model or self.get_default_model() or "").strip()
+        model_candidates: list[str | None] = [model]
+        fallback = rate_limit_fallback_model(primary)
+        if fallback and fallback != primary:
+            model_candidates.append(fallback)
+
+        last_response: LLMResponse | None = None
+        for idx, model_id in enumerate(model_candidates):
+            last_response = await self._chat_with_retry_for_model(
+                messages,
+                tools,
+                model_id,
+                resolved_max_tokens,
+                resolved_temperature,
+                resolved_reasoning_effort,
+                tool_choice,
+            )
+            if last_response.finish_reason != "error":
+                return last_response
+            if not looks_like_rate_or_quota_error(last_response.content or ""):
+                return last_response
+            if idx < len(model_candidates) - 1:
+                logger.info(
+                    "TutorBot LLM: rate/quota on {}, retrying with {}",
+                    primary,
+                    model_candidates[-1],
                 )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                response = LLMResponse(
-                    content=f"Error calling LLM: {exc}",
-                    finish_reason="error",
-                )
 
-            if response.finish_reason != "error":
-                return response
-            if not self._is_transient_error(response.content):
-                return response
-
-            err = (response.content or "").lower()
-            logger.warning(
-                "LLM transient error (attempt {}/{}), retrying in {}s: {}",
-                attempt,
-                len(self._CHAT_RETRY_DELAYS),
-                delay,
-                err[:120],
-            )
-            await asyncio.sleep(delay)
-
-        try:
-            return await self.chat(
-                messages=messages,
-                tools=tools,
-                model=model,
-                max_tokens=resolved_max_tokens,
-                temperature=resolved_temperature,
-                reasoning_effort=resolved_reasoning_effort,
-                tool_choice=tool_choice,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            return LLMResponse(
-                content=f"Error calling LLM: {exc}",
-                finish_reason="error",
-            )
+        return last_response or LLMResponse(
+            content="Error calling LLM: Unknown error",
+            finish_reason="error",
+        )
 
     @abstractmethod
     def get_default_model(self) -> str:

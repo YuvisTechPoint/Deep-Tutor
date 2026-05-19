@@ -218,13 +218,18 @@ class KnowledgeBaseManager:
                         continue
 
                     raw_provider = kb_entry.get("rag_provider")
-                    if kb_entry.get("rag_provider") != DEFAULT_PROVIDER:
-                        kb_entry["rag_provider"] = DEFAULT_PROVIDER
+                    raw_s = str(raw_provider or "").strip().lower()
+                    normalized = normalize_provider_name(raw_provider)
+                    if kb_entry.get("rag_provider") != normalized:
+                        kb_entry["rag_provider"] = normalized
                         config_changed = True
 
-                    if isinstance(raw_provider, str) and raw_provider.strip().lower() not in {
+                    if isinstance(raw_provider, str) and raw_s not in {
                         "",
-                        DEFAULT_PROVIDER,
+                        "llamaindex",
+                        "langchain",
+                        "langchain_corpus",
+                        "lc",
                     }:
                         if not kb_entry.get("needs_reindex", False):
                             kb_entry["needs_reindex"] = True
@@ -492,7 +497,7 @@ class KnowledgeBaseManager:
                 if metadata.get("rag_provider"):
                     raw_provider = str(metadata["rag_provider"]).strip().lower()
                     kb_entry["rag_provider"] = normalize_provider_name(raw_provider)
-                    if raw_provider not in {"", DEFAULT_PROVIDER}:
+                    if raw_provider not in {"", "llamaindex", "langchain", "langchain_corpus", "lc"}:
                         kb_entry["needs_reindex"] = True
                 if metadata.get("created_at"):
                     kb_entry["created_at"] = metadata["created_at"]
@@ -514,7 +519,10 @@ class KnowledgeBaseManager:
             from deeptutor.services.rag.index_versioning import list_kb_versions
 
             rag_storage = kb_dir / "rag_storage"
-            if any(bool(version.get("ready")) for version in list_kb_versions(kb_dir)):
+            lc_dir = kb_dir / "_langchain_faiss"
+            if lc_dir.is_dir() and any(lc_dir.iterdir()):
+                kb_entry["rag_provider"] = "langchain"
+            elif any(bool(version.get("ready")) for version in list_kb_versions(kb_dir)):
                 kb_entry["rag_provider"] = DEFAULT_PROVIDER
             elif rag_storage.exists():
                 kb_entry["rag_provider"] = DEFAULT_PROVIDER
@@ -661,7 +669,7 @@ class KnowledgeBaseManager:
             metadata = {
                 "name": kb_name,
                 "description": kb_config.get("description", f"Knowledge base: {kb_name}"),
-                "rag_provider": DEFAULT_PROVIDER,
+                "rag_provider": normalize_provider_name(kb_config.get("rag_provider")),
                 "needs_reindex": bool(kb_config.get("needs_reindex", False)),
                 "created_at": kb_config.get("created_at"),
                 "last_updated": kb_config.get("updated_at"),
@@ -700,7 +708,7 @@ class KnowledgeBaseManager:
         status = kb_config.get("status")
         progress = kb_config.get("progress")
         description = kb_config.get("description", f"Knowledge base: {kb_name}")
-        rag_provider = DEFAULT_PROVIDER
+        rag_provider = normalize_provider_name(kb_config.get("rag_provider"))
         needs_reindex = bool(kb_config.get("needs_reindex", False))
         created_at = kb_config.get("created_at")
         updated_at = kb_config.get("updated_at")
@@ -714,11 +722,14 @@ class KnowledgeBaseManager:
         dir_exists = kb_dir.exists()
         index_versions: list[dict[str, Any]] = []
         has_ready_llamaindex = False
+        has_lc_index = False
         if dir_exists:
             from deeptutor.services.rag.index_versioning import list_kb_versions
 
             index_versions = list_kb_versions(kb_dir)
             has_ready_llamaindex = any(bool(version.get("ready")) for version in index_versions)
+            lc_dir = kb_dir / "_langchain_faiss"
+            has_lc_index = lc_dir.is_dir() and any(lc_dir.iterdir())
 
         # For old KBs without status field, determine status from rag_storage
         if effective_needs_reindex:
@@ -819,7 +830,7 @@ class KnowledgeBaseManager:
         )
 
         kb_dir = self.base_dir / kb_name if dir_exists else None
-        rag_initialized = has_ready_llamaindex
+        rag_initialized = has_ready_llamaindex or (rag_provider == "langchain" and has_lc_index)
 
         active_signature = signature_from_embedding_config()
         active_match = (

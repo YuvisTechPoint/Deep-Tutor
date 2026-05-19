@@ -4,8 +4,8 @@ Falls back to LLM-based classification only for ambiguous cases.
 """
 from __future__ import annotations
 
-import re
 from enum import Enum
+import re
 
 
 class Intent(str, Enum):
@@ -108,6 +108,7 @@ def adjust_intent_with_learning_profile(
         [
             str(profile.get("target_path", "")),
             " ".join(profile.get("goals") or []),
+            " ".join(profile.get("preparing_for") or []),
             str(profile.get("experience_level", "")),
         ]
     ).lower()

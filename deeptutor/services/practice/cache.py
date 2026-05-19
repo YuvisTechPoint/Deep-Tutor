@@ -19,12 +19,12 @@ Design choices:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import threading
 import time
-import uuid
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
+import uuid
 
 if TYPE_CHECKING:
     from deeptutor.services.practice.bank import Question
@@ -41,6 +41,7 @@ class _CacheEntry:
     created_at: float
     topic: str
     difficulty: str
+    hints: dict[str, str]
 
 
 _quizzes: dict[str, _CacheEntry] = {}
@@ -74,6 +75,7 @@ def store_quiz(
             created_at=now,
             topic=topic,
             difficulty=difficulty,
+            hints={},
         )
     logger.debug("Cached quiz %s (topic=%s, difficulty=%s, n=%d)",
                  quiz_id, topic, difficulty, len(questions))
@@ -93,6 +95,34 @@ def get_quiz(quiz_id: str) -> list["Question"] | None:
         return entry.questions
 
 
+def get_cached_hint(quiz_id: str, question_id: str) -> str | None:
+    """Return a previously generated hint for this question, if any."""
+    if not quiz_id or not question_id:
+        return None
+    now = time.time()
+    with _lock:
+        _evict_expired_locked(now)
+        entry = _quizzes.get(quiz_id)
+        if entry is None:
+            return None
+        return entry.hints.get(question_id)
+
+
+def store_hint(quiz_id: str, question_id: str, hint: str) -> bool:
+    """Cache a hint on the quiz entry. Returns False if quiz is unknown/expired."""
+    text = (hint or "").strip()
+    if not quiz_id or not question_id or not text:
+        return False
+    now = time.time()
+    with _lock:
+        _evict_expired_locked(now)
+        entry = _quizzes.get(quiz_id)
+        if entry is None:
+            return False
+        entry.hints[question_id] = text[:500]
+        return True
+
+
 def drop_quiz(quiz_id: str) -> bool:
     """Forget a cached quiz (called from ``submit`` once scoring is done)."""
     with _lock:
@@ -109,4 +139,11 @@ def cache_stats() -> dict:
         }
 
 
-__all__ = ["cache_stats", "drop_quiz", "get_quiz", "store_quiz"]
+__all__ = [
+    "cache_stats",
+    "drop_quiz",
+    "get_cached_hint",
+    "get_quiz",
+    "store_hint",
+    "store_quiz",
+]

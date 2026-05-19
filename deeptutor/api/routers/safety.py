@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 import os
 
+from fastapi import APIRouter
 import httpx
-from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from deeptutor.services.hf_openai_compat import hf_hub_token_from_env

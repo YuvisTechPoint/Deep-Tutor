@@ -124,7 +124,7 @@
 - **ナレッジハブ** — PDF、Markdown、テキストファイルをアップロードして RAG 対応ナレッジベースを構築。色分けされたノートブックに洞察を整理し、質問バンクでクイズを振り返り、DeepTutor の教え方を形成するカスタム Skills を作成。ドキュメントは静的に置かれているだけでなく、あらゆる会話を積極的に支援。
 - **永続メモリ** — DeepTutor があなたのプロフィールを構築：何を学んだか、どのように学ぶか、どこへ向かっているか。すべての機能と TutorBot で共有され、インタラクションを重ねるごとに精度が向上。
 - **パーソナル TutorBot** — チャットボットではなく自律型チューター。各 TutorBot は独自のワークスペース、メモリ、人格、スキルセットを持つ。リマインダーを設定し、新しい能力を学び、あなたとともに成長。[nanobot](https://github.com/HKUDS/nanobot) で動作。
-- **エージェントネイティブ CLI** — すべての機能、ナレッジベース、セッション、TutorBot に一コマンドでアクセス。人間には Rich ターミナル出力、AI エージェントとパイプラインには構造化 JSON。プロジェクトルートの [`SKILL.md`](../../SKILL.md) を任意のツール対応エージェントに渡せば自律的に操作可能。
+- **エージェントネイティブ CLI** — すべての機能、ナレッジベース、セッション、TutorBot に一コマンドでアクセス。人間には Rich ターミナル出力、AI エージェントとパイプラインには構造化 JSON。プロジェクトルートの [`SKILL.md`](../../docs/cli-skill.md) を任意のツール対応エージェントに渡せば自律的に操作可能。
 - **オプション認証** — ローカル使用時はデフォルト無効。公開ホスティング時は環境変数2つでログイン要求。bcrypt ハッシュパスワード、JWT セッション、セルフサービス登録ページ、組み込み管理ダッシュボードによるマルチユーザーサポート。オプションで **PocketBase** を認証・ストレージのサイドカーとして使用可能（OAuth 対応、マルチユーザー並行処理改善）。
 
 ---
@@ -387,10 +387,10 @@ cp .env.example .env
 公式イメージは各リリース時に [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) に `linux/amd64` と `linux/arm64` 向けに公開されます。
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-特定のバージョンに固定するには `docker-compose.ghcr.yml` のイメージタグを編集：
+特定のバージョンに固定するには `docker-compose.yml (profile ghcr)` のイメージタグを編集：
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.3.4  # または :latest
@@ -484,7 +484,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 ソースコードをマウントし、両サービスのホットリロードを有効化：
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 `deeptutor/`、`deeptutor_cli/`、`scripts/`、`web/` への変更が即座に反映されます。
@@ -504,7 +504,7 @@ FRONTEND_PORT=4000
 再起動：
 
 ```bash
-docker compose up -d     # または docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # または docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -713,7 +713,7 @@ deeptutor bot list                  # すべてのアクティブなチュータ
 
 DeepTutor は完全に CLI ネイティブです。すべての機能、ナレッジベース、セッション、メモリ、TutorBot に一コマンドでアクセス — ブラウザ不要。CLI は人間（リッチターミナルレンダリング）と AI エージェント（構造化 JSON 出力）の両方に対応。
 
-プロジェクトルートの [`SKILL.md`](../../SKILL.md) を任意のツール対応エージェント（[nanobot](https://github.com/HKUDS/nanobot) または任意の LLM）に渡せば、DeepTutor を自律的に設定・操作できます。
+プロジェクトルートの [`SKILL.md`](../../docs/cli-skill.md) を任意のツール対応エージェント（[nanobot](https://github.com/HKUDS/nanobot) または任意の LLM）に渡せば、DeepTutor を自律的に設定・操作できます。
 
 **ワンショット実行** — 任意の機能をターミナルから直接実行：
 

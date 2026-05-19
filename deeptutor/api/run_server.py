@@ -19,6 +19,26 @@ import uvicorn
 
 # Force unbuffered output
 os.environ["PYTHONUNBUFFERED"] = "1"
+
+
+def _uvicorn_reload_enabled() -> bool:
+    """Whether to pass ``reload=True`` to uvicorn.
+
+    On Windows, uvicorn's reloader stops workers with ``CTRL_C_EVENT`` (see
+    ``uvicorn.supervisors.basereload``). That can propagate to other processes
+    attached to the same console.
+
+    Opt in with ``DEEPTUTOR_API_RELOAD=1`` (or ``true`` / ``yes`` / ``on``).
+    Force off anytime with ``DEEPTUTOR_API_RELOAD=0`` (or ``false`` / ``no``).
+    """
+    raw = (os.environ.get("DEEPTUTOR_API_RELOAD") or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw in ("0", "false", "no", "off"):
+        return False
+    return False
+
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True, errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -51,13 +71,13 @@ def main() -> None:
         str(project_root / "deeptutor"),  # Main package
     ]
 
-    # Start uvicorn server with reload enabled and restricted watch dirs
+    use_reload = _uvicorn_reload_enabled()
     uvicorn.run(
         "deeptutor.api.main:app",
         host="0.0.0.0",
         port=backend_port,
-        reload=True,
-        reload_dirs=reload_dirs,
+        reload=use_reload,
+        reload_dirs=reload_dirs if use_reload else None,
         log_level="info",
         access_log=False,
     )

@@ -46,10 +46,12 @@ def fake_service(tmp_path) -> tuple[RAGService, _FakePipeline]:
     return service, pipeline
 
 
-def test_provider_argument_is_silently_ignored(tmp_path) -> None:
-    """Constructor accepts ``provider`` for back-compat but always uses llamaindex."""
+def test_provider_kw_sets_pipeline_override(tmp_path) -> None:
+    """Legacy ``provider`` kw selects the pipeline kind (normalized) instead of env-only."""
     service = RAGService(kb_base_dir=str(tmp_path), provider="lightrag")
     assert service.provider == "llamaindex"
+    s2 = RAGService(kb_base_dir=str(tmp_path), pipeline_name="llamaindex")
+    assert s2.provider == "llamaindex"
 
 
 @pytest.mark.asyncio

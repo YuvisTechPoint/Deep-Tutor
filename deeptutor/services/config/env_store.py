@@ -12,9 +12,6 @@ ENV_PATH = PROJECT_ROOT / ".env"
 
 ENV_KEY_ORDER = (
     "BACKEND_PORT",
-    "FRONTEND_PORT",
-    "NEXT_PUBLIC_API_BASE_EXTERNAL",
-    "NEXT_PUBLIC_API_BASE",
     "CORS_ORIGIN",
     "CORS_ORIGINS",
     "DISABLE_SSL_VERIFY",
@@ -27,16 +24,6 @@ ENV_KEY_ORDER = (
     "GOOGLE_OAUTH_CLIENT_SECRET",
     "GOOGLE_OAUTH_REDIRECT_URI",
     "FIREBASE_PROJECT_ID",
-    "NEXT_PUBLIC_FIREBASE_API_KEY",
-    "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
-    "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
-    "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
-    "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID",
-    "NEXT_PUBLIC_FIREBASE_APP_ID",
-    "NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID",
-    "NEXT_PUBLIC_SUPABASE_URL",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "NEXT_PUBLIC_AUTH_ENABLED",
     "POCKETBASE_URL",
     "POCKETBASE_PORT",
     "POCKETBASE_ADMIN_EMAIL",
@@ -48,6 +35,7 @@ ENV_KEY_ORDER = (
     "LLM_HOST",
     "LLM_API_VERSION",
     "LLM_REASONING_EFFORT",
+    "LLM_RATE_LIMIT_FALLBACK_MODEL",
     "LLM_USE_HF_ROUTER",
     "HF_TOKEN",
     "HF_API_TOKEN",
@@ -69,13 +57,14 @@ ENV_KEY_ORDER = (
     "COHERE_API_KEY",
     "JINA_API_KEY",
     "GEMINI_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "GOOGLE_API_KEY",
     "SEARCH_PROVIDER",
     "SEARCH_API_KEY",
     "SEARCH_BASE_URL",
     "SEARCH_PROXY",
     "RAZORPAY_KEY_ID",
     "RAZORPAY_KEY_SECRET",
-    "NEXT_PUBLIC_RAZORPAY_KEY_ID",
     "RAZORPAY_MERCHANT_ID",
 )
 
@@ -115,7 +104,6 @@ def _render_optional_bool(value: Any) -> str:
 @dataclass(slots=True)
 class ConfigSummary:
     backend_port: int
-    frontend_port: int
     llm: dict[str, str]
     embedding: dict[str, str]
     search: dict[str, str]
@@ -144,9 +132,6 @@ class EnvStore:
         values = self.load()
         return ConfigSummary(
             backend_port=_safe_int(values.get("BACKEND_PORT") or os.getenv("BACKEND_PORT"), 8001),
-            frontend_port=_safe_int(
-                values.get("FRONTEND_PORT") or os.getenv("FRONTEND_PORT"), 3782
-            ),
             llm={
                 "binding": values.get("LLM_BINDING", os.getenv("LLM_BINDING", "openai")),
                 "model": values.get("LLM_MODEL", os.getenv("LLM_MODEL", "")),
@@ -223,8 +208,8 @@ class EnvStore:
         search_map = search if isinstance(search, dict) else {}
         return {
             "BACKEND_PORT": str(ports_map.get("backend") or 8001),
-            "FRONTEND_PORT": str(ports_map.get("frontend") or 3782),
             "LLM_BINDING": str(llm_map.get("binding") or "openai"),
+            "LLM_RATE_LIMIT_FALLBACK_MODEL": str(llm_map.get("fallback_model") or ""),
             "LLM_MODEL": str(llm_map.get("model") or ""),
             "LLM_API_KEY": str(llm_map.get("api_key") or ""),
             "LLM_HOST": str(llm_map.get("host") or ""),
@@ -259,8 +244,12 @@ class EnvStore:
         current = self.load()
         return {
             "BACKEND_PORT": current.get("BACKEND_PORT", os.getenv("BACKEND_PORT", "8001")),
-            "FRONTEND_PORT": current.get("FRONTEND_PORT", os.getenv("FRONTEND_PORT", "3782")),
             "LLM_BINDING": str((llm_profile or {}).get("binding") or "openai"),
+            "LLM_RATE_LIMIT_FALLBACK_MODEL": str(
+                (llm_model or {}).get("fallback_model")
+                or (llm_profile or {}).get("fallback_model")
+                or current.get("LLM_RATE_LIMIT_FALLBACK_MODEL", os.getenv("LLM_RATE_LIMIT_FALLBACK_MODEL", ""))
+            ),
             "LLM_MODEL": str((llm_model or {}).get("model") or ""),
             "LLM_API_KEY": str((llm_profile or {}).get("api_key") or ""),
             "LLM_HOST": str((llm_profile or {}).get("base_url") or ""),

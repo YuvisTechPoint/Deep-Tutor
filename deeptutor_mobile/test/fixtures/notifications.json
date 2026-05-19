@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "n1",
+      "title": "Mission complete",
+      "message": "You earned 50 XP!",
+      "read": false,
+      "created_at": "2025-05-18T12:00:00Z",
+      "type": "gamification"
+    }
+  ]
+}

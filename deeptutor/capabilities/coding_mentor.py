@@ -37,7 +37,7 @@ class CodingMentorCapability(BaseCapability):
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
         from deeptutor.services.llm import stream as llm_stream
         from deeptutor.services.llm.config import get_llm_config
-        from deeptutor.services.model_router import detect_intent, get_model_router, Intent
+        from deeptutor.services.model_router import Intent, get_model_router
 
         async with stream.stage("analyzing", source=self.manifest.name):
             await stream.progress("Routing to coding model...", source=self.manifest.name)

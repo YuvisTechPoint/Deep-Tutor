@@ -124,7 +124,7 @@
 - **नॉलेज हब** — RAG KB, रंगीन नोटबुक, प्रश्न बैंक, कस्टम Skills से शिक्षण शैली।
 - **स्थायी मेमोरी** — प्रगति सारांश व शिक्षार्थी प्रोफ़ाइल; TutorBot के साथ साझा।
 - **व्यक्तिगत TutorBot** — चैटबॉट नहीं: स्वायत्त ट्यूटर, अपना वर्कस्पेस, मेमोरी, व्यक्तित्व, कौशल। [nanobot](https://github.com/HKUDS/nanobot)।
-- **एजेंट-नेटिव CLI** — क्षमता, KB, सत्र, TutorBot एक कमांड में; Rich व JSON। [`SKILL.md`](../../SKILL.md)।
+- **एजेंट-नेटिव CLI** — क्षमता, KB, सत्र, TutorBot एक कमांड में; Rich व JSON। [`SKILL.md`](../../docs/cli-skill.md)।
 
 ---
 
@@ -330,10 +330,10 @@ cp .env.example .env
 आधिकारिक इमेज [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) पर प्रत्येक रिलीज़ के लिए `linux/amd64` व `linux/arm64` के लिए प्रकाशित होती हैं।
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-संस्करण पिन करने के लिए `docker-compose.ghcr.yml` में इमेज टैग संपादित करें:
+संस्करण पिन करने के लिए `docker-compose.yml (profile ghcr)` में इमेज टैग संपादित करें:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.0.0  # या :latest
@@ -418,7 +418,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 स्रोत माउंट करने व दोनों सेवाओं पर हॉट-रिलोड के लिए डेव ओवरले लगाएँ:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 `deeptutor/`, `deeptutor_cli/`, `scripts/` व `web/` में परिवर्तन तुरंत दिखते हैं।
@@ -438,7 +438,7 @@ FRONTEND_PORT=4000
 फिर पुनः आरंभ करें:
 
 ```bash
-docker compose up -d     # या docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # या docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -614,7 +614,7 @@ deeptutor bot list
 <img src="../../assets/figs/cli-architecture.png" alt="CLI" width="800">
 </div>
 
-बिना ब्राउज़र: क्षमता, KB, सत्र, मेमोरी, TutorBot। Rich + JSON। [`SKILL.md`](../../SKILL.md)।
+बिना ब्राउज़र: क्षमता, KB, सत्र, मेमोरी, TutorBot। Rich + JSON। [`SKILL.md`](../../docs/cli-skill.md)।
 
 ```bash
 deeptutor run chat "Explain the Fourier transform" -t rag --kb textbook

@@ -37,15 +37,6 @@ dependencies = [
 [project.scripts]
 deeptutor = "deeptutor_cli.main:main"
 
-# Vercel Python / FastAPI — export ASGI app (default scan only checks app.py, api/main.py, …).
-# https://vercel.com/docs/frameworks/backend/fastapi#exporting-the-fastapi-application
-[tool.vercel]
-entrypoint = "deeptutor.api.main:app"
-
-# FastAPI lives in optional [server]; install the package + server extra for the function bundle.
-[tool.vercel.scripts]
-install = "pip install -e '.[server]'"
-
 [project.optional-dependencies]
 # Full CLI: RAG (LlamaIndex), document parsing, and LLM provider SDKs.
 # Mirrors requirements/cli.txt — keep in sync.
@@ -68,6 +59,15 @@ cli = [
     "defusedxml>=0.7.1",
 ]
 
+# Optional LangChain + FAISS RAG with ``data/corpora`` dataset merge (set RAG_PIPELINE=langchain).
+rag-langchain = [
+    "langchain-core>=0.3.0,<0.4.0",
+    "langchain-community>=0.3.0,<0.4.0",
+    "langchain-openai>=0.2.0,<0.4.0",
+    "langchain-text-splitters>=0.3.0,<0.4.0",
+    "faiss-cpu>=1.8.0,<2.0.0",
+]
+
 # Web/API server (CLI + FastAPI). Mirrors requirements/server.txt.
 # loguru / json-repair live here (not in [tutorbot]) because provider_core
 # imports them unconditionally — needed by every server install path.
@@ -77,6 +77,7 @@ server = [
     "uvicorn[standard]>=0.24.0",
     "websockets>=12.0",
     "python-multipart>=0.0.6",
+    "reportlab>=4.0.0",
     "bcrypt>=4.0.0",
     "python-jose[cryptography]>=3.3.0",
     "pocketbase>=0.12.0",

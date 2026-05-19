@@ -88,7 +88,7 @@ class AssessmentCapability(BaseCapability):
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
         from deeptutor.services.llm import complete as llm_complete
         from deeptutor.services.llm.config import get_llm_config
-        from deeptutor.services.model_router import get_model_router, Intent
+        from deeptutor.services.model_router import Intent, get_model_router
 
         cfg_overrides = context.config_overrides or {}
         mode = cfg_overrides.get("mode", "generate")  # "generate" | "evaluate"

@@ -1,0 +1,137 @@
+{
+  "@@locale": "hi",
+
+  "appName": "डीपट्यूटर",
+  "welcomeBack": "वापस स्वागत है",
+  "signIn": "साइन इन करें",
+  "signOut": "साइन आउट",
+  "register": "खाता बनाएं",
+  "username": "उपयोगकर्ता नाम",
+  "password": "पासवर्ड",
+  "confirmPassword": "पासवर्ड की पुष्टि करें",
+
+  "home": "होम",
+  "chat": "चैट",
+  "learn": "सीखें",
+  "profile": "प्रोफ़ाइल",
+  "missions": "मिशन",
+  "career": "करियर",
+  "practice": "अभ्यास",
+  "settings": "सेटिंग्स",
+
+  "goodMorning": "सुप्रभात",
+  "goodAfternoon": "शुभ दोपहर",
+  "goodEvening": "शुभ संध्या",
+
+  "xpEarned": "{xp} XP अर्जित",
+  "@xpEarned": {
+    "placeholders": {
+      "xp": { "type": "int" }
+    }
+  },
+
+  "startQuiz": "क्विज़ शुरू करें",
+  "submitQuiz": "जमा करें",
+  "nextQuestion": "अगला",
+  "previousQuestion": "पिछला",
+  "getHint": "संकेत लें",
+
+  "newChat": "नई चैट",
+  "askTutor": "अपने AI ट्यूटर से पूछें...",
+
+  "continueButton": "जारी रखें",
+  "backButton": "वापस",
+  "finishButton": "समाप्त करें",
+
+  "careerPaths": "करियर पथ",
+  "recommended": "अनुशंसित",
+  "todaysMissions": "आज के मिशन",
+  "markComplete": "पूर्ण चिह्नित करें",
+
+  "language": "भाषा",
+  "settings": "सेटिंग्स",
+
+  "noChatsYet": "अभी तक कोई चैट नहीं",
+  "startConversation": "अपने AI ट्यूटर के साथ बातचीत शुरू करें",
+
+  "knowledgeBases": "ज्ञान संग्रह",
+  "createKnowledgeBase": "नया ज्ञान संग्रह बनाएं",
+  "noKnowledgeBases": "अभी तक कोई ज्ञान संग्रह नहीं",
+  "uploadFiles": "फ़ाइलें अपलोड करें",
+  "reindex": "पुनः इंडेक्स करें",
+  "supportedFileTypes": "समर्थित फ़ाइल प्रकार",
+
+  "space": "स्पेस",
+  "sessions": "सत्र",
+  "notebooks": "नोटबुक",
+  "questions": "प्रश्न",
+  "skills": "कौशल",
+  "memory": "मेमोरी",
+
+  "advancedSettings": "उन्नत सेटिंग्स",
+  "modelRouting": "मॉडल रूटिंग",
+  "billing": "बिलिंग",
+  "subscribe": "सदस्यता लें",
+  "currentSubscription": "वर्तमान सदस्यता",
+  "safetyScreening": "सुरक्षा जाँच",
+  "safetyScreeningSubtitle": "भेजने से पहले संदेश /safety/moderate के माध्यम से जाँचें",
+
+  "codeLab": "कोड लैब",
+  "runCode": "चलाएं",
+  "submitCode": "जमा करें",
+  "examMode": "परीक्षा मोड",
+  "violationDetected": "उल्लंघन का पता चला",
+
+  "revision": "पुनरावलोकन",
+  "again": "फिर से",
+  "hard": "कठिन",
+  "good": "अच्छा",
+  "easy": "आसान",
+
+  "roadmap": "रोडमैप",
+  "milestone": "मील का पत्थर",
+
+  "progress": "प्रगति",
+  "achievements": "उपलब्धियाँ",
+  "leaderboard": "लीडरबोर्ड",
+  "xpTrend": "XP रुझान",
+  "topicMastery": "विषय निपुणता",
+  "weakAreas": "कमज़ोर क्षेत्र",
+  "claim": "क्लेम करें",
+
+  "tutorBots": "ट्यूटरबॉट्स",
+  "newTutorBot": "नया ट्यूटरबॉट",
+  "talkToBot": "अपने बॉट से बात करें…",
+
+  "coWriter": "को-राइटर",
+  "newDocument": "नया दस्तावेज़",
+  "aiAssist": "AI से संपादन के लिए कहें…",
+  "exportMarkdown": "मार्कडाउन निर्यात करें",
+
+  "books": "पुस्तकें",
+  "page": "पृष्ठ",
+  "checkAnswer": "जाँचें",
+
+  "whiteboard": "व्हाइटबोर्ड",
+  "startRecording": "रिकॉर्डिंग शुरू करें",
+  "stopRecording": "रिकॉर्डिंग बंद करें",
+
+  "mentorPortal": "मेंटर पोर्टल",
+  "students": "छात्र",
+  "interventions": "हस्तक्षेप",
+  "messages": "संदेश",
+  "cohortAnalytics": "कोहोर्ट विश्लेषण",
+
+  "recruiterPortal": "रिक्रूटर पोर्टल",
+  "searchCandidates": "उम्मीदवार खोजें…",
+  "shortlists": "शॉर्टलिस्ट",
+
+  "eipProfile": "EIP प्रोफ़ाइल",
+  "myEipProfile": "मेरी EIP प्रोफ़ाइल",
+  "publicProfile": "सार्वजनिक प्रोफ़ाइल",
+  "shareLink": "लिंक साझा करें",
+
+  "biometricUnlock": "बायोमेट्रिक अनलॉक",
+  "deepLinks": "डीप लिंक्स",
+  "save": "सहेजें"
+}

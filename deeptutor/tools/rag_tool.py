@@ -36,6 +36,30 @@ def _resolve_kb_name(kb_name: Optional[str], kb_base_dir: Optional[str] = None) 
     return requested or None
 
 
+def _pipeline_override_for_kb(
+    resolved_kb: str,
+    kb_base_dir: Optional[str],
+    explicit_provider: Optional[str],
+) -> Optional[str]:
+    """Explicit tool ``provider`` wins; else use ``rag_provider`` from kb_config when present."""
+    if explicit_provider is not None and str(explicit_provider).strip():
+        return RAGService.coerce_kb_provider(explicit_provider)
+    root = kb_base_dir or DEFAULT_KB_BASE_DIR
+    try:
+        from deeptutor.knowledge.manager import KnowledgeBaseManager
+
+        mgr = KnowledgeBaseManager(base_dir=root)
+        mgr.config = mgr._load_config()
+        row = mgr.config.get("knowledge_bases", {}).get(resolved_kb) or {}
+        if row.get("rag_provider") is not None and str(row.get("rag_provider")).strip():
+            return RAGService.coerce_kb_provider(row.get("rag_provider"))
+    except ValueError:
+        raise
+    except Exception:
+        return None
+    return None
+
+
 async def rag_search(
     query: str,
     kb_name: Optional[str] = None,
@@ -45,12 +69,12 @@ async def rag_search(
     **kwargs,
 ) -> dict:
     """
-    Query knowledge base using LlamaIndex RAG pipeline.
+    Query knowledge base using the configured RAG pipeline (per-KB ``rag_provider`` when set).
 
     Args:
         query: Query question
         kb_name: Knowledge base name (optional, defaults to default knowledge base)
-        provider: RAG pipeline to use (defaults to configured provider or "llamaindex")
+        provider: RAG pipeline id override (``llamaindex`` / ``langchain``); defaults to KB config then env
         kb_base_dir: Base directory for knowledge bases (for testing)
         **kwargs: Additional parameters passed to the RAG pipeline
 
@@ -95,10 +119,12 @@ async def rag_search(
             # for admin / single-user mode (the non-admin path raised above).
             pass
 
-    service = RAGService(kb_base_dir=kb_base_dir, provider=provider)
     resolved_kb_name = _resolve_kb_name(kb_name, kb_base_dir=kb_base_dir)
     if not resolved_kb_name:
         raise ValueError("No knowledge base selected and no default knowledge base is configured.")
+
+    pipeline_override = _pipeline_override_for_kb(resolved_kb_name, kb_base_dir, provider)
+    service = RAGService(kb_base_dir=kb_base_dir, pipeline_name=pipeline_override)
 
     try:
         return await service.search(
@@ -135,7 +161,10 @@ async def initialize_rag(
         documents = ["doc1.pdf", "doc2.txt"]
         success = await initialize_rag("my_kb", documents)
     """
-    service = RAGService(kb_base_dir=kb_base_dir, provider=provider)
+    service = RAGService(
+        kb_base_dir=kb_base_dir,
+        pipeline_name=_pipeline_override_for_kb(kb_name, kb_base_dir, provider),
+    )
     return await service.initialize(kb_name=kb_name, file_paths=documents, **kwargs)
 
 
@@ -158,7 +187,10 @@ async def delete_rag(
     Example:
         success = await delete_rag("old_kb")
     """
-    service = RAGService(kb_base_dir=kb_base_dir, provider=provider)
+    service = RAGService(
+        kb_base_dir=kb_base_dir,
+        pipeline_name=_pipeline_override_for_kb(kb_name, kb_base_dir, provider),
+    )
     return await service.delete(kb_name=kb_name)
 
 

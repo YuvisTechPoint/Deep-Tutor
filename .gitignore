@@ -11,8 +11,11 @@ data/
 run_code_workspace/
 deeptutor/agents/question/reference_papers/
 deeptutor/services/rag/eg_only_for_analysis/
-docs/
 .claude
+# Install logs (local only)
+npm_install.log
+pip_install.log
+*_install.log
 
 # LaTeX build artifacts
 *.aux
@@ -66,29 +69,23 @@ env.bak/
 venv.bak/
 
 # ============================================
-# Node.js and Frontend Build
+# Node.js (removed — web frontend deleted)
 # ============================================
-# Node modules
 node_modules/
 **/node_modules/
-
-# Next.js build output
-.next/
-web/.next/
-out/
-web/out/
-
-# Auto-generated env.local (created by start_web.py / start_tour.py)
-web/.env.local
-
-# Frontend build artifacts
-dist/
-web/dist/
-build/
-web/build/
-
-# TypeScript build info
 *.tsbuildinfo
+
+# ============================================
+# Flutter / Dart
+# ============================================
+deeptutor_mobile/.dart_tool/
+deeptutor_mobile/.flutter-plugins
+deeptutor_mobile/.flutter-plugins-dependencies
+deeptutor_mobile/build/
+deeptutor_mobile/android/.gradle/
+deeptutor_mobile/android/local.properties
+deeptutor_mobile/android/key.properties
+deeptutor_mobile/*.iml
 
 # ============================================
 # Common Output and Cache Directories

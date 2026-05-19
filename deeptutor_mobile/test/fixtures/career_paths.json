@@ -1,0 +1,18 @@
+{
+  "paths": [
+    {
+      "id": "ml-engineer",
+      "title": "Machine Learning Engineer",
+      "description": "Build and deploy ML systems",
+      "readiness": 42,
+      "timeline": "6–9 months",
+      "skills": [{"name": "Python"}, {"name": "TensorFlow"}]
+    }
+  ],
+  "recommended_path_id": "ml-engineer",
+  "profile_summary": {
+    "target_path": "ml-engineer",
+    "experience_level": "intermediate"
+  },
+  "stats": {"paths_viewed": 3}
+}

@@ -7,9 +7,12 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 import json
+import re
 from typing import Any
 
 from loguru import logger
+
+from deeptutor.services.llm.openai_error_message import user_message_from_openai_exception
 
 
 @dataclass
@@ -301,6 +304,18 @@ class LLMProvider(ABC):
         err = (content or "").lower()
         return any(marker in err for marker in cls._TRANSIENT_ERROR_MARKERS)
 
+    @classmethod
+    def _is_quota_or_daily_limit_error(cls, content: str | None) -> bool:
+        """Hard limits where short exponential backoff will not help."""
+        err = (content or "").lower()
+        if "tokens per day" in err or " per day " in err:
+            return True
+        if "rate_limit_exceeded" in err.replace(" ", "_"):
+            return True
+        if "try again in" in err and re.search(r"\d+\s*h(?:\d|\b)", err):
+            return True
+        return False
+
     async def _call_with_retry(
         self,
         call: Callable[..., Awaitable[LLMResponse]],
@@ -335,11 +350,14 @@ class LLMProvider(ABC):
                 raise
             except Exception as exc:
                 response = LLMResponse(
-                    content=f"Error calling LLM: {exc}",
+                    content=f"Error calling LLM: {user_message_from_openai_exception(exc)}",
                     finish_reason="error",
                 )
 
             if response.finish_reason != "error":
+                return response
+
+            if self._is_quota_or_daily_limit_error(response.content):
                 return response
 
             if not self._is_transient_error(response.content):

@@ -13,6 +13,7 @@ from deeptutor.core.tool_protocol import (
     ToolPromptHints,
     ToolResult,
 )
+import os
 
 
 class _FakeTool:
@@ -104,7 +105,7 @@ async def test_solve_tool_runtime_executes_via_core_registry_with_context_bindin
             {
                 "intent": "check determinant",
                 "timeout": 30,
-                "workspace_dir": "/tmp/solve/code_runs",
+                "workspace_dir": os.path.join("/tmp/solve", "code_runs"),
             },
         )
     ]

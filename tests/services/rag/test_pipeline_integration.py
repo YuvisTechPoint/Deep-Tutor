@@ -94,7 +94,7 @@ class PipelineIntegrationTest:
         # Initialize service with temp directory
         from deeptutor.services.rag import RAGService
 
-        self.service = RAGService(kb_base_dir=self.temp_dir, provider=self.pipeline_name)
+        self.service = RAGService(kb_base_dir=self.temp_dir, pipeline_name=self.pipeline_name)
 
         # Verify test file exists
         if not self.test_file.exists():

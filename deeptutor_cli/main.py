@@ -104,16 +104,13 @@ def run_capability(
 
 
 @app.command()
-def start() -> None:
-    """Launch backend + frontend together."""
-    from pathlib import Path
-    import subprocess
-    import sys
-
-    script = str(Path(__file__).resolve().parent.parent / "scripts" / "start_web.py")
-    result = subprocess.run([sys.executable, script], check=False)
-    if result.returncode:
-        raise typer.Exit(code=result.returncode)
+def start(
+    host: str = typer.Option("0.0.0.0", help="Bind address."),
+    port: int = typer.Option(get_backend_port(), help="Port number."),
+    reload: bool = typer.Option(False, help="Enable auto-reload for development."),
+) -> None:
+    """Start the DeepTutor API server (alias for ``serve``)."""
+    serve(host=host, port=port, reload=reload)
 
 
 @app.command()
@@ -148,7 +145,7 @@ def serve(
         host=host,
         port=port,
         reload=reload,
-        reload_excludes=["web/*", "data/*"] if reload else None,
+        reload_excludes=["data/*"] if reload else None,
     )
 
 

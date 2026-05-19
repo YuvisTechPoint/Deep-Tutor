@@ -21,6 +21,12 @@ Routing: the generator picks its model per topic via
 
 The ``HF_MODEL_PRACTICE_CODING`` / ``HF_MODEL_PRACTICE_MATH`` /
 ``HF_MODEL_PRACTICE_GENERAL`` env overrides win over the curated defaults.
+
+On Groq-style OpenAI-compatible hosts, MCQs default to the shared structured-output
+model (see ``deeptutor.services.llm.feature_model_defaults``) unless you set
+``LLM_MODEL_PRACTICE`` or the ``HF_MODEL_PRACTICE_*`` vars, so Practice Center does
+not share the same heavy model as chat by default. On ``api.openai.com``, the default
+is ``gpt-4o-mini``.
 """
 
 from __future__ import annotations
@@ -28,10 +34,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
-import uuid
 from typing import Any
+import uuid
 
+from deeptutor.services.llm.feature_model_defaults import default_structured_output_model
+from deeptutor.services.llm.rate_limit_fallback import (
+    looks_like_rate_or_quota_error,
+    rate_limit_fallback_model,
+)
 from deeptutor.services.model_router import Intent, get_model_router
 from deeptutor.services.practice.bank import Question
 
@@ -79,7 +91,7 @@ Return ONLY valid JSON in this exact shape, with no markdown fences and no comme
       "question": "<question text>",
       "options": {{"A": "<text>", "B": "<text>", "C": "<text>", "D": "<text>"}},
       "correct": "A",
-      "explanation": "<2-3 sentences explaining why the correct option is right and why the distractors are wrong>",
+      "explanation": "<1-2 concise sentences: why the correct option is right; avoid repeating the question>",
       "tags": ["<sub-concept-1>", "<sub-concept-2>"],
       "difficulty": "{difficulty}"
     }}
@@ -161,7 +173,40 @@ def _validate_question(
     )
 
 
-async def _ask_llm(prompt: str, *, intent: Intent, role: str) -> str:
+def _resolve_practice_model(intent: Intent, role: str) -> str:
+    """Model id for MCQ generation (stable defaults on Groq / OpenAI API)."""
+    from deeptutor.services.llm.config import get_llm_config
+
+    pin = (os.getenv("LLM_MODEL_PRACTICE") or "").strip()
+    if pin:
+        return pin
+
+    router = get_model_router()
+    feature = _FEATURE_FOR_ROLE.get(role, "practice_general")
+    routed = router.route_feature(feature, intent=intent)
+    llm_cfg = get_llm_config()
+
+    if routed.api_key:
+        return routed.model
+
+    if router.model_for_feature(feature):
+        return routed.model
+
+    d = default_structured_output_model(llm_cfg.base_url, llm_cfg.effective_url)
+    if d:
+        return d
+
+    return llm_cfg.model or routed.model
+
+
+async def _ask_llm(
+    prompt: str,
+    *,
+    intent: Intent,
+    role: str,
+    max_tokens: int,
+    force_model: str | None = None,
+) -> str:
     """Single LLM round-trip. Routes via ``feature → intent``."""
     # Late imports avoid circulars with the LLM package at module import time.
     from deeptutor.services.llm import complete as llm_complete
@@ -174,7 +219,10 @@ async def _ask_llm(prompt: str, *, intent: Intent, role: str) -> str:
     llm_cfg = get_llm_config()
     api_key = routed.api_key or llm_cfg.api_key
     base_url = routed.api_base if routed.api_key else (llm_cfg.base_url or routed.api_base)
-    model = routed.model if routed.api_key else (llm_cfg.model or routed.model)
+    if force_model:
+        model = force_model
+    else:
+        model = _resolve_practice_model(intent, role)
 
     return await llm_complete(
         prompt=prompt,
@@ -185,7 +233,8 @@ async def _ask_llm(prompt: str, *, intent: Intent, role: str) -> str:
         model=model,
         api_key=api_key,
         base_url=base_url,
-        temperature=0.7,
+        temperature=0.55,
+        max_tokens=max_tokens,
     )
 
 
@@ -209,19 +258,61 @@ async def generate_quiz(
     if diff not in {"easy", "medium", "hard"}:
         diff = "medium"
     n = max(1, min(int(limit or 5), 10))
+    # Cap completion size so providers finish sooner (MCQ JSON is dense but bounded).
+    max_tokens = min(4096, 900 + n * 420)
 
     prompt = _PROMPT_TEMPLATE.format(topic=norm_topic, difficulty=diff, limit=n)
+
+    primary_model = _resolve_practice_model(intent, role)
+    fallback_model = rate_limit_fallback_model(primary_model)
+    model_chain: list[str | None] = [None] + ([fallback_model] if fallback_model else [])
+
+    async def _llm_round() -> str:
+        last_exc_msg: str | None = None
+        for forced in model_chain:
+            for gen_try in (1, 2):
+                try:
+                    return await _ask_llm(
+                        prompt,
+                        intent=intent,
+                        role=role,
+                        max_tokens=max_tokens,
+                        force_model=forced,
+                    )
+                except Exception as exc:  # noqa: BLE001 — logged; surfaced after chain
+                    last_exc_msg = f"LLM call failed: {exc}"
+                    logger.warning(
+                        "Practice LLM failure (model=%r gen_try=%s): %s",
+                        forced or primary_model,
+                        gen_try,
+                        exc,
+                    )
+                    if gen_try < 2:
+                        await asyncio.sleep(0.2)
+            if (
+                forced is None
+                and fallback_model
+                and looks_like_rate_or_quota_error(last_exc_msg or "")
+            ):
+                logger.info(
+                    "Practice: using fallback model %r after limit on %r",
+                    fallback_model,
+                    primary_model,
+                )
+                continue
+            break
+        raise RuntimeError(last_exc_msg or "LLM call failed.")
 
     last_err: str | None = None
     for attempt in (1, 2):
         try:
-            raw = await _ask_llm(prompt, intent=intent, role=role)
-        except Exception as exc:  # noqa: BLE001 — bubble up after retries
-            last_err = f"LLM call failed: {exc}"
-            logger.warning("Practice generation attempt %d failed: %s", attempt, exc)
+            raw = await _llm_round()
+        except RuntimeError as exc:
+            last_err = str(exc)
+            logger.warning("Practice generation LLM phase attempt %d: %s", attempt, exc)
             if attempt == 2:
-                break
-            await asyncio.sleep(0.2)
+                raise RuntimeError(last_err) from exc
+            await asyncio.sleep(0.25)
             continue
 
         try:

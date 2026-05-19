@@ -124,7 +124,7 @@
 - **Hub de conhecimento** — Bases RAG, cadernos coloridos, banco de questões e Skills personalizados que moldam o ensino.
 - **Memória persistente** — Resumo de progresso e perfil do aprendiz; compartilhado com TutorBots.
 - **TutorBots pessoais** — Não são chatbots: tutores autônomos com espaço de trabalho, memória, personalidade e habilidades. [nanobot](https://github.com/HKUDS/nanobot).
-- **CLI nativo para agentes** — Capacidades, KB, sessões e TutorBot em um comando; Rich e JSON. [`SKILL.md`](../../SKILL.md).
+- **CLI nativo para agentes** — Capacidades, KB, sessões e TutorBot em um comando; Rich e JSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ---
 
@@ -330,10 +330,10 @@ Edite `.env` e preencha pelo menos os campos obrigatórios (como na [opção B](
 As imagens oficiais são publicadas no [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) a cada release, para `linux/amd64` e `linux/arm64`.
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-Para fixar uma versão, edite a tag da imagem em `docker-compose.ghcr.yml`:
+Para fixar uma versão, edite a tag da imagem em `docker-compose.yml (profile ghcr)`:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.0.0  # ou :latest
@@ -418,7 +418,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 Sobreponha o override de desenvolvimento para montar o código-fonte e habilitar hot-reload em ambos os serviços:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 Alterações em `deeptutor/`, `deeptutor_cli/`, `scripts/` e `web/` refletem-se imediatamente.
@@ -438,7 +438,7 @@ FRONTEND_PORT=4000
 Depois reinicie:
 
 ```bash
-docker compose up -d     # ou docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # ou docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -614,7 +614,7 @@ deeptutor bot list
 <img src="../../assets/figs/cli-architecture.png" alt="CLI" width="800">
 </div>
 
-Sem navegador: capacidades, KB, sessões, memória, TutorBot. Rich + JSON. [`SKILL.md`](../../SKILL.md).
+Sem navegador: capacidades, KB, sessões, memória, TutorBot. Rich + JSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ```bash
 deeptutor run chat "Explain the Fourier transform" -t rag --kb textbook

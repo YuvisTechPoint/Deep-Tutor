@@ -11,9 +11,9 @@ payloads (no random numbers) so the UI shows real empty states.
 
 from __future__ import annotations
 
-import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any
 
 from fastapi import APIRouter

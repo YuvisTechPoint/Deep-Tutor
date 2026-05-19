@@ -124,7 +124,7 @@
 - **Knowledge Hub** — PDF, Markdown, texte ; carnets ; banque de questions ; Skills via `SKILL.md`.
 - **Mémoire persistante** — Profil partagé avec toutes les fonctions et TutorBots.
 - **TutorBots personnels** — Tuteurs autonomes, espaces séparés ; [nanobot](https://github.com/HKUDS/nanobot).
-- **CLI agent-native** — Tout en une commande ; Rich pour humains, JSON pour agents ; [`SKILL.md`](../../SKILL.md).
+- **CLI agent-native** — Tout en une commande ; Rich pour humains, JSON pour agents ; [`SKILL.md`](../../docs/cli-skill.md).
 - **Authentification optionnelle** — Désactivée en local ; deux variables pour l’exiger en public. Multi-utilisateur (bcrypt, JWT, inscription, admin). **PocketBase** optionnel (OAuth, concurrence), sidecar sans changer le code.
 
 ---
@@ -166,7 +166,7 @@ Démarrage : `python scripts/start_web.py` ou `python -m deeptutor.api.run_serve
 
 ### Option C — Docker
 
-`docker compose -f docker-compose.ghcr.yml up -d` ou `docker compose up -d`. Variable distante `NEXT_PUBLIC_API_BASE_EXTERNAL`. Détails auth/PocketBase identiques à la version anglaise ; multi-tenant : [Multi-utilisateur](#multi-user).
+`docker compose --profile ghcr up -d` ou `docker compose up -d`. Variable distante `NEXT_PUBLIC_API_BASE_EXTERNAL`. Détails auth/PocketBase identiques à la version anglaise ; multi-tenant : [Multi-utilisateur](#multi-user).
 
 ### Option D — CLI seule
 

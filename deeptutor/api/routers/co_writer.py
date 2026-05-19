@@ -1,8 +1,12 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime
+from html import escape as html_escape
+from io import BytesIO
 import json
 import logging
+import os
+import re
 import traceback
 from typing import AsyncGenerator, Literal
 import uuid
@@ -15,6 +19,8 @@ from deeptutor.agents.chat.agentic_pipeline import AgenticChatPipeline
 from deeptutor.co_writer.edit_agent import (
     EditAgent,
     load_history,
+    local_fallback_edit,
+    looks_like_llm_error,
     print_stats,
     save_history,
     save_tool_call,
@@ -82,6 +88,7 @@ class ReactEditRequest(BaseModel):
     mode: Literal["rewrite", "shorten", "expand", "none"] = "rewrite"
     tools: list[str] = []
     kb_name: str | None = None
+    model: str | None = None
 
 
 class ReactEditResponse(BaseModel):
@@ -98,6 +105,12 @@ class AutoMarkRequest(BaseModel):
 class AutoMarkResponse(BaseModel):
     marked_text: str
     operation_id: str
+
+
+class ExportPdfRequest(BaseModel):
+    content: str
+    filename: str = "cv.pdf"
+    title: str = "CV"
 
 
 def _normalize_react_edit_tools(tools: list[str] | None) -> list[str]:
@@ -117,23 +130,177 @@ def _normalize_react_edit_tools(tools: list[str] | None) -> list[str]:
     return normalized
 
 
+def _markdown_heading_key(title: str) -> str:
+    return re.sub(r"\s+", " ", title.strip().lower()).strip(" :")
+
+
+def _markdown_to_pdf_bytes(markdown: str, *, title: str = "CV") -> bytes:
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    except Exception as exc:  # pragma: no cover - import failure is environment-specific
+        raise HTTPException(status_code=503, detail=f"PDF rendering unavailable: {exc}")
+
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=0.65 * inch,
+        leftMargin=0.65 * inch,
+        topMargin=0.7 * inch,
+        bottomMargin=0.7 * inch,
+        title=title,
+    )
+
+    base_styles = getSampleStyleSheet()
+    heading1 = ParagraphStyle(
+        "DeepTutorHeading1",
+        parent=base_styles["Heading1"],
+        textColor=colors.HexColor("#D4734B"),
+        fontSize=18,
+        leading=22,
+        spaceAfter=10,
+    )
+    heading2 = ParagraphStyle(
+        "DeepTutorHeading2",
+        parent=base_styles["Heading2"],
+        textColor=colors.HexColor("#D4734B"),
+        fontSize=13,
+        leading=16,
+        spaceBefore=6,
+        spaceAfter=6,
+    )
+    heading3 = ParagraphStyle(
+        "DeepTutorHeading3",
+        parent=base_styles["Heading3"],
+        textColor=colors.HexColor("#6A3B2E"),
+        fontSize=11,
+        leading=14,
+        spaceBefore=4,
+        spaceAfter=4,
+    )
+    body = ParagraphStyle(
+        "DeepTutorBody",
+        parent=base_styles["BodyText"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=13,
+        alignment=TA_LEFT,
+        spaceAfter=5,
+    )
+    list_body = ParagraphStyle(
+        "DeepTutorListBody",
+        parent=body,
+        leftIndent=14,
+        firstLineIndent=0,
+        spaceAfter=2,
+    )
+
+    def render_inline(text: str) -> str:
+        rendered = html_escape(text)
+        rendered = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", rendered)
+        rendered = re.sub(r"\*(.+?)\*", r"<i>\1</i>", rendered)
+        rendered = re.sub(r"`(.+?)`", r"<font name='Courier'>\1</font>", rendered)
+        return rendered
+
+    def flush_paragraph(lines: list[str], story: list[object]) -> None:
+        if not lines:
+            return
+        paragraph_text = "<br/>".join(render_inline(line) for line in lines).strip()
+        if paragraph_text:
+            story.append(Paragraph(paragraph_text, body))
+        lines.clear()
+
+    story: list[object] = []
+    paragraph_lines: list[str] = []
+    current_title = title.strip() or "CV"
+    story.append(Paragraph(render_inline(current_title), heading1))
+    story.append(Spacer(1, 0.12 * inch))
+
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        raw_line = lines[index]
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            flush_paragraph(paragraph_lines, story)
+            index += 1
+            continue
+
+        heading_match = re.match(r"^(#{1,6})\s+(.+?)\s*$", stripped)
+        if heading_match:
+            flush_paragraph(paragraph_lines, story)
+            level = len(heading_match.group(1))
+            heading_text = render_inline(heading_match.group(2))
+            if level == 1:
+                story.append(Paragraph(heading_text, heading1))
+            elif level == 2:
+                story.append(Paragraph(heading_text, heading2))
+            else:
+                story.append(Paragraph(heading_text, heading3))
+            index += 1
+            continue
+
+        if stripped in {"---", "***", "___"}:
+            flush_paragraph(paragraph_lines, story)
+            story.append(Spacer(1, 0.08 * inch))
+            index += 1
+            continue
+
+        list_match = re.match(r"^(?P<indent>[ \t]*)(?P<marker>[-*+]|\d+[.)])\s+(?P<text>.+)$", raw_line)
+        if list_match:
+            flush_paragraph(paragraph_lines, story)
+            indent = list_match.group("indent").expandtabs(4)
+            level = max(len(indent) // 2, 0)
+            marker = list_match.group("marker")
+            bullet = marker if marker[0].isdigit() else "•"
+            list_text = render_inline(list_match.group("text"))
+            item_style = ParagraphStyle(
+                f"DeepTutorListBody{level}",
+                parent=list_body,
+                leftIndent=14 + (level * 14),
+            )
+            story.append(Paragraph(list_text, item_style, bulletText=bullet))
+            index += 1
+            continue
+
+        paragraph_lines.append(stripped)
+        index += 1
+
+    flush_paragraph(paragraph_lines, story)
+    document.build(story)
+    return buffer.getvalue()
+
+
+def _markdown_to_pdf_filename(filename: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", filename.strip())
+    cleaned = cleaned.strip("-") or "cv"
+    if not cleaned.lower().endswith(".pdf"):
+        cleaned += ".pdf"
+    return cleaned
+
 def _default_mode_instruction(mode: str, language: str) -> str:
-    zh = language.startswith("zh")
-    defaults = {
-        "rewrite": "润色这段 markdown，保持原意、结构和语气自然。",
-        "shorten": "压缩这段 markdown，让表达更精炼，同时保留关键信息。",
-        "expand": "扩展这段 markdown，补充必要细节，同时保持原有风格。",
-        "none": "根据用户要求编辑这段 markdown。",
-    }
-    if zh:
+    if language.startswith("zh"):
+        defaults = {
+            "rewrite": "润色这段 Markdown，保持原意但让表达更自然。",
+            "shorten": "压缩这段 Markdown，同时保留关键信息。",
+            "expand": "扩展这段 Markdown，补充必要细节。",
+            "none": "根据用户要求编辑这段 Markdown。",
+        }
         return defaults.get(mode, defaults["none"])
-    defaults_en = {
-        "rewrite": "Rewrite this markdown snippet while preserving its meaning, structure, and tone.",
-        "shorten": "Shorten this markdown snippet while preserving the key information.",
-        "expand": "Expand this markdown snippet with helpful detail while keeping the original style.",
-        "none": "Edit this markdown snippet according to the user's request.",
+    defaults = {
+        "rewrite": "Rewrite this Markdown while preserving the original meaning.",
+        "shorten": "Shorten this Markdown while keeping the key information.",
+        "expand": "Expand this Markdown with useful detail.",
+        "none": "Edit this Markdown according to the user's request.",
     }
-    return defaults_en.get(mode, defaults_en["none"])
+    return defaults.get(mode, defaults["none"])
 
 
 def _build_react_edit_prompt(
@@ -231,6 +398,12 @@ async def _run_react_edit(
     )
     operation_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
 
+    requested_model = (
+        (request.model or "").strip()
+        or (os.getenv("LLM_RATE_LIMIT_FALLBACK_MODEL") or "").strip()
+        or None
+    )
+
     context = UnifiedContext(
         session_id="",
         user_message=prompt,
@@ -239,9 +412,13 @@ async def _run_react_edit(
         active_capability="chat",
         knowledge_bases=knowledge_bases,
         attachments=[],
-        config_overrides={},
+        config_overrides={"model": requested_model} if requested_model else {},
         language=language,
-        metadata={"source": "co_writer_react_edit", "mode": request.mode},
+        metadata={
+            "source": "co_writer_react_edit",
+            "mode": request.mode,
+            "requested_model": requested_model,
+        },
     )
 
     pipeline = AgenticChatPipeline(language=language)
@@ -285,40 +462,66 @@ async def _run_react_edit(
             )
 
     response_chunks: list[str] = []
-    if stream is None:
-        async for _c in agent.stream_llm(
-            user_prompt=final_prompt,
-            system_prompt=system_prompt,
-            stage=f"react_edit_{request.mode}",
-        ):
-            if _c:
-                response_chunks.append(_c)
-    else:
-        async with active_stream.stage("responding", source="co_writer_react_edit"):
-            await active_stream.progress(
-                "Writing final edit...",
-                source="co_writer_react_edit",
-                stage="responding",
-            )
-            async for chunk in agent.stream_llm(
+    used_local_fallback = False
+    try:
+        if stream is None:
+            async for _c in agent.stream_llm(
                 user_prompt=final_prompt,
                 system_prompt=system_prompt,
+                model=requested_model,
                 stage=f"react_edit_{request.mode}",
             ):
-                if not chunk:
-                    continue
-                response_chunks.append(chunk)
-                await active_stream.content(
-                    chunk,
+                if _c:
+                    response_chunks.append(_c)
+        else:
+            async with active_stream.stage("responding", source="co_writer_react_edit"):
+                await active_stream.progress(
+                    "Writing final edit...",
                     source="co_writer_react_edit",
                     stage="responding",
                 )
+                async for chunk in agent.stream_llm(
+                    user_prompt=final_prompt,
+                    system_prompt=system_prompt,
+                    model=requested_model,
+                    stage=f"react_edit_{request.mode}",
+                ):
+                    if not chunk:
+                        continue
+                    response_chunks.append(chunk)
+                    await active_stream.content(
+                        chunk,
+                        source="co_writer_react_edit",
+                        stage="responding",
+                    )
+    except Exception as e:
+        # Local deterministic fallback for development when LLM is unavailable.
+        logger.warning(f"LLM stream failed in react edit, falling back: {e}")
+        if request.mode == "shorten":
+            edited_text = local_fallback_edit(selected_text, "shorten", request.instruction)
+        elif request.mode == "expand":
+            edited_text = local_fallback_edit(selected_text, "expand", request.instruction)
+        else:
+            edited_text = local_fallback_edit(selected_text, "rewrite", request.instruction)
+        response_chunks = [edited_text]
+        used_local_fallback = True
 
     edited_text = _clean_react_edit_output(
         "".join(response_chunks),
         binding=agent.binding,
-        model=agent.get_model(),
+        model=requested_model or agent.get_model(),
     )
+
+    if looks_like_llm_error(edited_text):
+        edited_text = local_fallback_edit(selected_text, request.mode, instruction)
+        used_local_fallback = True
+
+    if used_local_fallback:
+        thinking_text = (
+            "Used local markdown fallback because the model was unavailable."
+            if not language.startswith("zh")
+            else "模型不可用，已使用本地 Markdown 回退编辑。"
+        )
 
     tool_call_file = None
     if tool_traces:
@@ -346,13 +549,14 @@ async def _run_react_edit(
             "mode": request.mode,
             "tools": tools,
             "kb_name": request.kb_name,
+            "requested_model": requested_model,
             "input": {
                 "selected_text": request.selected_text,
                 "instruction": instruction,
             },
             "output": {"edited_text": edited_text},
             "tool_call_file": tool_call_file,
-            "model": agent.get_model(),
+            "model": requested_model or agent.get_model(),
         }
     )
     save_history(history)
@@ -523,6 +727,23 @@ async def export_markdown(content: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/export/pdf")
+async def export_pdf(request: ExportPdfRequest):
+    """Render Markdown content to a server-generated PDF."""
+    try:
+        pdf_bytes = _markdown_to_pdf_bytes(request.content, title=request.title)
+        filename = _markdown_to_pdf_filename(request.filename)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Document CRUD (multi-project Co-Writer)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -562,6 +783,7 @@ class DocumentSummaryResponse(BaseModel):
     created_at: float
     updated_at: float
     preview: str = ""
+    word_count: int = 0
 
     @classmethod
     def from_summary(cls, summary: CoWriterDocumentSummary) -> "DocumentSummaryResponse":
@@ -571,6 +793,7 @@ class DocumentSummaryResponse(BaseModel):
             created_at=summary.created_at,
             updated_at=summary.updated_at,
             preview=summary.preview,
+            word_count=summary.word_count,
         )
 
 

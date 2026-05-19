@@ -19,7 +19,7 @@ def test_identity_migrates_legacy_users_with_stable_uid(tmp_path, monkeypatch):
 
     assert users["alice"]["id"].startswith("u_")
     assert users["alice"]["role"] == "admin"
-    assert users["bob"]["role"] == "user"
+    assert users["bob"]["role"] == "student"
     assert users_file.exists()
 
 

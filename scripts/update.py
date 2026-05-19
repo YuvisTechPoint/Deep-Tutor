@@ -335,12 +335,6 @@ def dependency_hints(changed_files: list[str]) -> list[str]:
         hints.append(
             'Backend dependencies changed: consider running python -m pip install -e ".[server]"'
         )
-    if any(
-        path in {"web/package.json", "web/package-lock.json", "web/pnpm-lock.yaml"}
-        or path == "web/yarn.lock"
-        for path in changed_files
-    ):
-        hints.append("Frontend dependencies changed: consider running cd web && npm install")
     return hints
 
 

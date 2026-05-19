@@ -105,6 +105,12 @@ Your workspace is at: {workspace_path}
 - If a tool call fails, analyze the error before retrying with a different approach.
 - Ask for clarification when the request is ambiguous.
 
+## API function calling (tools)
+- Tools are invoked only through the chat API's **native function-calling** format.
+- Use each tool's **exact** registered name (e.g. `rag`, `web_search`) as the function name. **Never** put parameters inside the name (no `rag{{...}}`, no `<function-rag...>`, no Python dict syntax attached to the name).
+- Pass arguments **only** as one JSON object matching the tool schema, e.g. `{{"query": "cyber law and ethics", "kb_name": "cyber-law", "mode": "naive"}}`.
+- If you are unsure of a KB id, call `rag` with just `query` or list the workspace; do not invent malformed call syntax.
+
 Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel."""
 
     def _build_shared_memory(self) -> str:

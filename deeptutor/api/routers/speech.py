@@ -11,8 +11,8 @@ import logging
 import os
 from typing import Annotated
 
-import httpx
 from fastapi import APIRouter, File, HTTPException, UploadFile
+import httpx
 from pydantic import BaseModel
 
 from deeptutor.services.hf_openai_compat import hf_hub_token_from_env

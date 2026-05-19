@@ -1,4 +1,4 @@
-"""Tests for KnowledgeBaseConfigService stub + legacy-config migration."""
+"""Tests for KnowledgeBaseConfigService (per-KB ``rag_provider`` + legacy migration)."""
 
 from __future__ import annotations
 
@@ -23,22 +23,23 @@ def fresh_service(tmp_path: Path) -> KnowledgeBaseConfigService:
     return KnowledgeBaseConfigService(config_path=tmp_path / "kb_config.json")
 
 
-class TestStubProviderApi:
-    def test_get_rag_provider_always_llamaindex(self, fresh_service) -> None:
-        assert fresh_service.get_rag_provider("any-kb") == "llamaindex"
+class TestRagProviderApi:
+    def test_get_rag_provider_reads_kb_entry(self, fresh_service) -> None:
+        fresh_service.set_kb_config("kb-1", {"path": "kb-1", "rag_provider": "langchain"})
+        assert fresh_service.get_rag_provider("kb-1") == "langchain"
 
-    def test_set_rag_provider_coerces_legacy_to_llamaindex(self, fresh_service) -> None:
+    def test_set_rag_provider_normalizes_legacy_aliases(self, fresh_service) -> None:
         fresh_service.set_rag_provider("kb-1", "lightrag")
         cfg = fresh_service.get_kb_config("kb-1")
         assert cfg["rag_provider"] == "llamaindex"
 
-    def test_set_rag_provider_coerces_unknown_to_llamaindex(self, fresh_service) -> None:
+    def test_set_rag_provider_normalizes_unknown_to_llamaindex(self, fresh_service) -> None:
         fresh_service.set_rag_provider("kb-2", "totally-unknown")
         cfg = fresh_service.get_kb_config("kb-2")
         assert cfg["rag_provider"] == "llamaindex"
 
-    def test_get_kb_config_overrides_provider_field(self, fresh_service) -> None:
-        """Even if a stale entry leaks `rag_provider: lightrag`, reads return llamaindex."""
+    def test_get_kb_config_normalizes_stale_provider_field(self, fresh_service) -> None:
+        """Stale ``lightrag`` in the backing dict is normalized on read."""
         fresh_service._config.setdefault("knowledge_bases", {})["kb-3"] = {
             "path": "kb-3",
             "rag_provider": "lightrag",
@@ -84,6 +85,19 @@ class TestPayloadNormalizationOnLoad:
         kb = service._config["knowledge_bases"]["fresh-kb"]
         assert kb["rag_provider"] == "llamaindex"
         assert kb.get("needs_reindex", False) is False
+
+    def test_langchain_kb_is_preserved_on_load(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "kb_config.json"
+        _write_kb_config(
+            config_path,
+            {
+                "knowledge_bases": {
+                    "lc-kb": {"path": "lc-kb", "rag_provider": "langchain"},
+                },
+            },
+        )
+        service = KnowledgeBaseConfigService(config_path=config_path)
+        assert service._config["knowledge_bases"]["lc-kb"]["rag_provider"] == "langchain"
 
     def test_legacy_storage_dir_marks_reindex(self, tmp_path: Path) -> None:
         """If the on-disk storage uses the old layout, force a reindex flag."""
@@ -136,6 +150,18 @@ class TestPersistence:
         on_disk = json.loads(config_path.read_text(encoding="utf-8"))
         assert on_disk["knowledge_bases"]["new-kb"]["rag_provider"] == "llamaindex"
         assert on_disk["knowledge_bases"]["new-kb"]["description"] == "x"
+
+    def test_langchain_survives_roundtrip(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "kb_config.json"
+        service = KnowledgeBaseConfigService(config_path=config_path)
+        service.set_kb_config("lc-kb", {"path": "lc-kb", "rag_provider": "langchain"})
+        on_disk = json.loads(config_path.read_text(encoding="utf-8"))
+        assert on_disk["knowledge_bases"]["lc-kb"]["rag_provider"] == "langchain"
+
+    def test_switching_provider_marks_reindex(self, fresh_service) -> None:
+        fresh_service.set_kb_config("k", {"path": "k", "rag_provider": "llamaindex"})
+        fresh_service.set_kb_config("k", {"rag_provider": "langchain"})
+        assert fresh_service.get_kb_config("k")["needs_reindex"] is True
 
     def test_search_mode_is_preserved(self, fresh_service) -> None:
         fresh_service.set_search_mode("kb", "naive")

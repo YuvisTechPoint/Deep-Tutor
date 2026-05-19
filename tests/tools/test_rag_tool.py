@@ -1,4 +1,4 @@
-"""Factory + tool-wrapper layer tests (llamaindex-only)."""
+"""Factory + tool-wrapper layer tests (LlamaIndex default, optional LangChain)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ import pytest
 
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
+    get_active_rag_provider,
     get_pipeline,
     list_pipelines,
     normalize_provider_name,
+    reset_pipeline_cache,
 )
 from deeptutor.tools.rag_tool import (
     RAGService,
@@ -19,33 +21,34 @@ from deeptutor.tools.rag_tool import (
 
 
 class TestNormalizeProviderName:
-    """`normalize_provider_name` is now a stub: every input collapses to llamaindex."""
-
     @pytest.mark.parametrize(
-        "value",
+        "value,expected",
         [
-            None,
-            "",
-            "  ",
-            "llamaindex",
-            "LlamaIndex",
-            "lightrag",
-            "raganything",
-            "raganything_docling",
-            "totally_unknown_xyz",
+            (None, DEFAULT_PROVIDER),
+            ("", DEFAULT_PROVIDER),
+            ("  ", DEFAULT_PROVIDER),
+            ("llamaindex", DEFAULT_PROVIDER),
+            ("LlamaIndex", DEFAULT_PROVIDER),
+            ("lightrag", DEFAULT_PROVIDER),
+            ("langchain", "langchain"),
+            ("LC", "langchain"),
+            ("totally_unknown_xyz", DEFAULT_PROVIDER),
         ],
     )
-    def test_collapses_to_default(self, value) -> None:
-        assert normalize_provider_name(value) == DEFAULT_PROVIDER
+    def test_mapping(self, value, expected) -> None:
+        assert normalize_provider_name(value) == expected
 
 
 class TestPipelineFactory:
-    def test_list_pipelines_only_default(self) -> None:
+    def test_list_pipelines_includes_default(self) -> None:
         pipelines = list_pipelines()
         assert isinstance(pipelines, list)
-        assert {p["id"] for p in pipelines} == {DEFAULT_PROVIDER}
+        ids = {p["id"] for p in pipelines}
+        assert DEFAULT_PROVIDER in ids
+        assert ids.issubset({DEFAULT_PROVIDER, "langchain"})
 
     def test_get_pipeline_returns_singleton(self) -> None:
+        reset_pipeline_cache()
         try:
             first = get_pipeline()
             second = get_pipeline()
@@ -53,8 +56,8 @@ class TestPipelineFactory:
             pytest.skip(f"LlamaIndex optional dependency missing: {exc}")
         assert first is second
 
-    def test_get_pipeline_ignores_provider_name(self) -> None:
-        """The legacy ``name`` argument is silently ignored."""
+    def test_get_pipeline_same_for_legacy_aliases(self) -> None:
+        reset_pipeline_cache()
         try:
             a = get_pipeline("llamaindex")
             b = get_pipeline("lightrag")
@@ -65,22 +68,34 @@ class TestPipelineFactory:
 
 
 class TestRAGServiceClassHelpers:
-    def test_list_providers_only_default(self) -> None:
+    def test_list_providers_includes_default(self) -> None:
         providers = RAGService.list_providers()
-        assert {p["id"] for p in providers} == {DEFAULT_PROVIDER}
+        ids = {p["id"] for p in providers}
+        assert DEFAULT_PROVIDER in ids
 
     def test_has_provider_default_true(self) -> None:
         assert RAGService.has_provider(DEFAULT_PROVIDER) is True
+
+    def test_has_provider_langchain_when_installed(self) -> None:
+        try:
+            import langchain_openai  # noqa: F401
+        except ImportError:
+            assert RAGService.has_provider("langchain") is False
+        else:
+            assert RAGService.has_provider("langchain") is True
 
     def test_has_provider_unknown_false(self) -> None:
         assert RAGService.has_provider("nonexistent") is False
         assert RAGService.has_provider("") is False
 
-    def test_get_current_provider_ignores_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("RAG_PROVIDER", "lightrag")
-        assert get_current_provider() == DEFAULT_PROVIDER
+    def test_get_current_provider_reads_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reset_pipeline_cache()
+        monkeypatch.delenv("RAG_PIPELINE", raising=False)
         monkeypatch.delenv("RAG_PROVIDER", raising=False)
         assert get_current_provider() == DEFAULT_PROVIDER
+        monkeypatch.setenv("RAG_PIPELINE", "langchain")
+        assert get_active_rag_provider() == "langchain"
+        assert RAGService.get_current_provider() == "langchain"
 
 
 class TestToolLayerExports:

@@ -229,7 +229,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "write_success": "Updated `.env` successfully.",
         "no_changes": "No files changed.",
         "next_steps": "Setup complete. You can now start DeepTutor with:",
-        "next_command": "python scripts/start_web.py",
+        "next_command": "python -m deeptutor.api.run_server",
         "summary_ports": "Ports",
         "summary_llm": "LLM",
         "summary_embedding": "Embedding",
@@ -248,7 +248,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "search_proxy_hint": "Optional — only set if you need an HTTP/SOCKS proxy to reach the search provider",
         # -- install step --
         "install_step": "Install dependencies",
-        "install_desc": "We will install Python (via uv) and Node.js dependencies for you.",
+        "install_desc": "We will install Python dependencies (via uv) for you.",
         "install_checking": "Checking environment ...",
         "install_uv_via_pip": "uv not found — installing via pip ...",
         "install_uv_pip_failed": "Failed to install uv via pip. The underlying error was:",
@@ -277,11 +277,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "install_node_abort": "Node.js is required for the frontend. Please install it and re-run this script.",
         "install_node_too_old": "Node.js {version} is too old. DeepTutor web requires Node.js >=20.9.0.",
         "install_profile_prompt": "Choose installation profile",
-        "install_profile_web_label": "Web app (recommended)",
+        "install_profile_web_label": "API server (recommended)",
         "install_profile_web_desc": "CLI + API server + RAG/document parsing",
-        "install_profile_tutorbot_label": "Web + TutorBot",
+        "install_profile_tutorbot_label": "API + TutorBot",
         "install_profile_tutorbot_desc": "Adds TutorBot engine and common channel SDKs",
-        "install_profile_matrix_label": "Web + TutorBot + Matrix",
+        "install_profile_matrix_label": "API + TutorBot + Matrix",
         "install_profile_matrix_desc": "Adds Matrix support without E2EE/libolm; install matrix-e2e for encrypted rooms",
         "install_math_animator": "Install Math Animator add-on?",
         "install_math_animator_hint": (
@@ -345,7 +345,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "write_success": "已成功更新 `.env`。",
         "no_changes": "未修改任何文件。",
         "next_steps": "配置完成。你现在可以用下面的命令启动 DeepTutor：",
-        "next_command": "python scripts/start_web.py",
+        "next_command": "python -m deeptutor.api.run_server",
         "summary_ports": "端口",
         "summary_llm": "LLM",
         "summary_embedding": "Embedding",
@@ -1012,42 +1012,6 @@ def _install_dependencies() -> None:
     uv_version = _get_version([uv, "--version"])
     log_success(_t("install_uv_ok", version=uv_version or "unknown"))
 
-    # --- detect Node.js / npm ---
-    node_version = _detect_command_version("node")
-    npm_version = _detect_command_version("npm")
-
-    if node_version and npm_version and _node_version_supported(node_version):
-        log_success(_t("install_node_ok", version=node_version))
-        log_success(_t("install_npm_ok", version=npm_version))
-    else:
-        if node_version and not _node_version_supported(node_version):
-            log_warn(_t("install_node_too_old", version=node_version))
-        else:
-            log_warn(_t("install_node_missing"))
-        strategy = _node_strategy()
-        hint_key = f"install_node_hint_{strategy}"
-        if hint_key in MESSAGES[_LANG]:
-            log_info(_t(hint_key))
-        else:
-            log_info(_t("install_node_hint_manual"))
-        print()
-        try:
-            input(f"  {_t('install_retry_node')}")
-        except EOFError:
-            pass
-        node_version = _detect_command_version("node")
-        npm_version = _detect_command_version("npm")
-        if not (node_version and npm_version):
-            log_error(_t("install_node_abort"))
-            raise SystemExit(1)
-        if not _node_version_supported(node_version):
-            log_error(_t("install_node_too_old", version=node_version))
-            raise SystemExit(1)
-        log_success(_t("install_node_ok", version=node_version))
-        log_success(_t("install_npm_ok", version=npm_version))
-
-    print()
-
     profile = _select_install_profile()
     include_math_animator = _select_math_animator()
     print()
@@ -1089,19 +1053,6 @@ def _install_dependencies() -> None:
         log_error(_t("install_failed", error=str(exc)))
         raise SystemExit(1)
 
-    # --- npm install ---
-    try:
-        npm_cmd = _get_npm_command()
-        _run_live(
-            [npm_cmd, "install"],
-            PROJECT_ROOT / "web",
-            _t("install_frontend"),
-        )
-        log_success(_t("install_frontend_done"))
-    except RuntimeError as exc:
-        log_error(_t("install_failed", error=str(exc)))
-        raise SystemExit(1)
-
     print()
     log_success(_t("install_all_done"))
     print()
@@ -1128,11 +1079,9 @@ def _configure_ports() -> dict[str, str]:
     step(3, _TOTAL_STEPS, _t("ports_step"))
     summary = get_env_store().as_summary()
     backend_port = _prompt_int(_t("backend_port"), summary.backend_port)
-    frontend_port = _prompt_int(_t("frontend_port"), summary.frontend_port)
     print()
     return {
         "BACKEND_PORT": str(backend_port),
-        "FRONTEND_PORT": str(frontend_port),
     }
 
 
@@ -1248,9 +1197,7 @@ def _configure_search() -> dict[str, str]:
 
 def _print_review(values: dict[str, str]) -> None:
     step(7, _TOTAL_STEPS, _t("review_step"))
-    log_info(
-        f"{_t('summary_ports')}  {bold(values['BACKEND_PORT'])} / {bold(values['FRONTEND_PORT'])}"
-    )
+    log_info(f"{_t('summary_ports')}  {bold(values['BACKEND_PORT'])}")
     log_info(
         "{}  {}  {}  {}".format(
             _t("summary_llm"),

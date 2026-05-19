@@ -124,7 +124,7 @@
 - **Knowledge Hub** — สร้าง knowledge base แบบ RAG-ready สมุดบันทึกสีสัน ธนาคารคำถาม และ Skills กำหนดสไตล์การสอน
 - **Persistent Memory** — DeepTutor สร้างโปรไฟล์ผู้เรียนที่เติบโตอยู่ตลอดเวลา ใช้ร่วมกันข้ามทุกฟีเจอร์และทุก TutorBot ยิ่งใช้ยิ่งแม่นยำ
 - **TutorBot ส่วนตัว** — ไม่ใช่แค่ chatbot แต่เป็นติวเตอร์อัตโนมัติที่มี workspace, memory, บุคลิก และทักษะของตัวเอง ขับเคลื่อนโดย [nanobot](https://github.com/HKUDS/nanobot)
-- **Agent-Native CLI** — ทุกความสามารถ, knowledge base, session และ TutorBot ผ่านคำสั่งเดียว Rich และ JSON มอบ [`SKILL.md`](../../SKILL.md) ให้ agent
+- **Agent-Native CLI** — ทุกความสามารถ, knowledge base, session และ TutorBot ผ่านคำสั่งเดียว Rich และ JSON มอบ [`SKILL.md`](../../docs/cli-skill.md) ให้ agent
 
 ---
 
@@ -325,10 +325,10 @@ cp .env.example .env
 Image ทางการเผยแพร่ที่ [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) ทุกครั้งที่ release สำหรับ `linux/amd64` และ `linux/arm64`
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-หากต้องการ pin เวอร์ชันเฉพาะ ให้แก้ image tag ใน `docker-compose.ghcr.yml`:
+หากต้องการ pin เวอร์ชันเฉพาะ ให้แก้ image tag ใน `docker-compose.yml (profile ghcr)`:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.0.0  # หรือ :latest
@@ -413,7 +413,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 เพิ่ม dev override เพื่อ mount source code และเปิด hot-reload สำหรับทั้งสองบริการ:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 การเปลี่ยนแปลงใน `deeptutor/`, `deeptutor_cli/`, `scripts/` และ `web/` จะมีผลทันที
@@ -433,7 +433,7 @@ FRONTEND_PORT=4000
 จากนั้นรีสตาร์ท:
 
 ```bash
-docker compose up -d     # หรือ docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # หรือ docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -605,7 +605,7 @@ deeptutor bot list                  # ดูติวเตอร์ทั้ง
 
 DeepTutor รองรับ CLI อย่างเต็มรูปแบบ ทุก capability, knowledge base, session, memory และ TutorBot อยู่ห่างแค่คำสั่งเดียว — ไม่ต้องเปิดเบราว์เซอร์ CLI ให้บริการทั้งมนุษย์ (แสดงผลสวยงามในเทอร์มินัล) และ AI agent (ส่งออกเป็น JSON ที่มีโครงสร้าง)
 
-มอบ [`SKILL.md`](../../SKILL.md) ที่ root ของโปรเจกต์ให้ agent ที่ใช้เครื่องมือ ([nanobot](https://github.com/HKUDS/nanobot) หรือ LLM ใดก็ตามที่มี tool access) แล้วมันจะตั้งค่าและใช้งาน DeepTutor ได้เอง
+มอบ [`SKILL.md`](../../docs/cli-skill.md) ที่ root ของโปรเจกต์ให้ agent ที่ใช้เครื่องมือ ([nanobot](https://github.com/HKUDS/nanobot) หรือ LLM ใดก็ตามที่มี tool access) แล้วมันจะตั้งค่าและใช้งาน DeepTutor ได้เอง
 
 **One-shot execution** — เรียกใช้ capability ใดก็ได้จากเทอร์มินัล:
 

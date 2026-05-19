@@ -91,21 +91,15 @@ def _uppercase_upload_payload() -> list[tuple[str, tuple[str, bytes, str]]]:
     return [("files", ("报告.PDF", b"%PDF-1.4\n", "application/pdf"))]
 
 
-def test_rag_providers_returns_llamaindex_only() -> None:
+def test_rag_providers_lists_builtin_pipelines() -> None:
     with TestClient(_build_app()) as client:
         response = client.get("/api/v1/knowledge/rag-providers")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload == {
-        "providers": [
-            {
-                "id": "llamaindex",
-                "name": "LlamaIndex",
-                "description": "Pure vector retrieval, fastest processing speed.",
-            }
-        ]
-    }
+    ids = [p["id"] for p in payload["providers"]]
+    assert "llamaindex" in ids
+    assert ids == sorted(set(ids))
 
 
 def test_supported_file_types_returns_upload_policy() -> None:

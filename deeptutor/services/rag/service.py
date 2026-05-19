@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 import shutil
 from typing import Any, Dict, List, Optional
 
-from .factory import DEFAULT_PROVIDER, get_pipeline, list_pipelines
+from .factory import get_active_rag_provider, get_pipeline, list_pipelines, normalize_provider_name
 
 DEFAULT_KB_BASE_DIR = str(
     Path(__file__).resolve().parent.parent.parent.parent / "data" / "knowledge_bases"
@@ -16,12 +15,14 @@ DEFAULT_KB_BASE_DIR = str(
 
 
 class RAGService:
-    """Unified RAG service backed by the LlamaIndex pipeline."""
+    """Unified RAG service (LlamaIndex by default, optional LangChain + corpus)."""
 
     def __init__(
         self,
         kb_base_dir: Optional[str] = None,
         provider: Optional[str] = None,  # accepted for backward compatibility
+        *,
+        pipeline_name: Optional[str] = None,
     ):
         self.logger = logging.getLogger(__name__)
         if kb_base_dir is None:
@@ -38,12 +39,26 @@ class RAGService:
                 )
                 kb_base_dir = DEFAULT_KB_BASE_DIR
         self.kb_base_dir = kb_base_dir
-        self.provider = DEFAULT_PROVIDER
+        if pipeline_name is not None:
+            self._pipeline_name_override: Optional[str] = normalize_provider_name(pipeline_name)
+        elif provider:
+            self._pipeline_name_override = normalize_provider_name(provider)
+        else:
+            self._pipeline_name_override = None
+        self.provider = self._effective_pipeline_kind()
         self._pipeline = None
+
+    def _effective_pipeline_kind(self) -> str:
+        if self._pipeline_name_override is not None:
+            return self._pipeline_name_override
+        return get_active_rag_provider()
 
     def _get_pipeline(self):
         if self._pipeline is None:
-            self._pipeline = get_pipeline(kb_base_dir=self.kb_base_dir)
+            self._pipeline = get_pipeline(
+                name=self._effective_pipeline_kind(),
+                kb_base_dir=self.kb_base_dir,
+            )
         return self._pipeline
 
     async def initialize(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
@@ -77,11 +92,12 @@ class RAGService:
             self.logger.info(f"Searching KB '{kb_name}' with query: {query[:50]}...")
             pipeline = self._get_pipeline()
 
+            active_provider = self._effective_pipeline_kind()
             await self._emit_tool_event(
                 event_sink,
                 "status",
                 f"Retrieving from knowledge base '{kb_name}'...",
-                {"provider": DEFAULT_PROVIDER, "trace_layer": "summary"},
+                {"provider": active_provider, "trace_layer": "summary"},
             )
 
             result = await pipeline.search(query=query, kb_name=kb_name, **kwargs)
@@ -92,7 +108,7 @@ class RAGService:
                 result["answer"] = result["content"]
             if "content" not in result and "answer" in result:
                 result["content"] = result["answer"]
-            result["provider"] = DEFAULT_PROVIDER
+            result["provider"] = active_provider
 
             if result.get("error_type") or result.get("needs_reindex"):
                 await self._emit_tool_event(
@@ -100,7 +116,7 @@ class RAGService:
                     "status",
                     result.get("answer") or result.get("content") or "RAG search failed.",
                     {
-                        "provider": DEFAULT_PROVIDER,
+                        "provider": active_provider,
                         "kb_name": kb_name,
                         "trace_layer": "summary",
                         "call_state": "error",
@@ -116,7 +132,7 @@ class RAGService:
                 "status",
                 f"Retrieved {len(answer)} characters of grounded context.",
                 {
-                    "provider": DEFAULT_PROVIDER,
+                    "provider": active_provider,
                     "kb_name": kb_name,
                     "trace_layer": "summary",
                 },
@@ -195,11 +211,30 @@ class RAGService:
 
     @staticmethod
     def get_current_provider() -> str:
-        # ``RAG_PROVIDER`` env var is honoured for visibility but the
-        # service only ships with a single backend.
-        os.getenv("RAG_PROVIDER")
-        return DEFAULT_PROVIDER
+        return get_active_rag_provider()
+
+    @staticmethod
+    def coerce_kb_provider(raw: Optional[str]) -> str:
+        """Normalize ``rag_provider`` from KB config; raise if LangChain is requested but unavailable."""
+        normalized = normalize_provider_name(raw)
+        if normalized == "langchain" and not RAGService.has_provider("langchain"):
+            raise ValueError(
+                "LangChain RAG extras are not installed. Install with: pip install 'deeptutor[rag-langchain]'"
+            )
+        return normalized
 
     @staticmethod
     def has_provider(name: str) -> bool:
-        return (name or "").strip().lower() == DEFAULT_PROVIDER
+        raw = (name or "").strip().lower()
+        if not raw:
+            return False
+        if raw in ("llamaindex", "lightrag", "raganything", "raganything_docling"):
+            return True
+        if raw in ("langchain", "langchain_corpus", "lc"):
+            try:
+                import langchain_openai  # noqa: F401
+
+                return True
+            except ImportError:
+                return False
+        return False

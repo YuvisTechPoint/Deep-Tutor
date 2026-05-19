@@ -8,11 +8,12 @@ import os
 from typing import Any
 from urllib.parse import urlparse
 
-from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
 from deeptutor.services.hf_openai_compat import (
     hf_hub_token_from_env,
     normalize_hf_openai_compat_base_url,
 )
+from deeptutor.services.model_router.default_models import HF_MAIN_VLM_MODEL
+from deeptutor.services.model_selection import LLMSelection, apply_llm_selection_to_catalog
 from deeptutor.services.provider_registry import (
     NANOBOT_LLM_PROVIDERS,
     PROVIDERS,
@@ -42,7 +43,7 @@ def _hf_default_chat_model() -> str:
     """
     explicit = _as_str(os.getenv("HF_DEFAULT_LLM_MODEL"))
     # OSS main tutor model from the self-hosted AI Tutor stack.
-    return explicit or "Qwen/Qwen2.5-32B-Instruct"
+    return explicit or HF_MAIN_VLM_MODEL
 
 
 def _truthy_env_flag(value: Any) -> bool:
@@ -202,7 +203,7 @@ EMBEDDING_PROVIDERS: dict[str, EmbeddingProviderSpec] = {
         default_api_base=EMBEDDING_PROVIDER_DEFAULT_ENDPOINTS["gemini"],
         keywords=("gemini", "gemini-embedding", "text-embedding"),
         is_local=False,
-        api_key_envs=("GEMINI_API_KEY",),
+        api_key_envs=("GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"),
         default_model="gemini-embedding-001",
         default_dim=3072,
     ),
@@ -601,7 +602,13 @@ def resolve_llm_runtime_config(
     if spec.name == "huggingface":
         api_base = normalize_hf_openai_compat_base_url(api_base or "")
     if not api_key and spec.env_key:
-        api_key = _as_str(os.getenv(spec.env_key, ""))
+        keys = (spec.env_key,) + tuple(getattr(spec, "env_key_alternates", ()) or ())
+        for env_name in keys:
+            if not env_name:
+                continue
+            api_key = _as_str(os.getenv(env_name, ""))
+            if api_key:
+                break
     if not api_key and spec.name == "huggingface":
         api_key = hf_hub_token_from_env()
     if not api_key and spec.is_local:

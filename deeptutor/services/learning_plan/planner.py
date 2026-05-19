@@ -13,11 +13,11 @@ auto-reflects progress.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import logging
-import threading
-from datetime import datetime, timezone
 from pathlib import Path
+import threading
 from typing import Any
 
 from deeptutor.services.path_service import get_path_service
@@ -352,8 +352,8 @@ _TARGET_KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _classify(target_path: str, goals: list[str]) -> str:
-    haystack = " ".join([target_path, *goals]).lower()
+def _classify(target_path: str, goals: list[str], preparing_for: list[str] | None = None) -> str:
+    haystack = " ".join([target_path, *goals, *(preparing_for or [])]).lower()
     for plan_id, keywords in _TARGET_KEYWORDS.items():
         for kw in keywords:
             if kw in haystack:
@@ -495,7 +495,11 @@ def iter_milestone_prerequisite_edges() -> list[dict[str, Any]]:
 
 def plan_signature(profile: dict[str, Any]) -> str:
     """Stable signature for caching — currently just the plan key."""
-    return _classify(profile.get("target_path", ""), profile.get("goals", []))
+    return _classify(
+        profile.get("target_path", ""),
+        profile.get("goals", []),
+        profile.get("preparing_for", []),
+    )
 
 
 def build_plan(profile: dict[str, Any]) -> dict[str, Any]:
@@ -505,7 +509,11 @@ def build_plan(profile: dict[str, Any]) -> dict[str, Any]:
     progress overlay and model-role annotations.
     """
 
-    plan_id = _classify(profile.get("target_path", ""), profile.get("goals") or [])
+    plan_id = _classify(
+        profile.get("target_path", ""),
+        profile.get("goals") or [],
+        profile.get("preparing_for") or [],
+    )
     template = _PLAN_TEMPLATES[plan_id]
     progress = _load_progress()
     weekly_hours = int(profile.get("weekly_hours") or 6)

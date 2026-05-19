@@ -1,0 +1,2032 @@
+Deep-Tutor Flutter — Senior Cursor Master Prompt
+
+How to use: Create a new folder mobile/ at the repo root (or a sibling repo). Open it in Cursor. Paste Section A into the first Agent chat as the system task. Keep Section B–E as reference while iterating.
+
+Source of truth in this monorepo:
+
+
+
+
+
+Backend: [deeptutor/api/](deeptutor/api/), [AGENTS.md](AGENTS.md)
+
+
+
+Web reference UI/contracts: [web/lib/](web/lib/), [web/context/UnifiedChatContext.tsx](web/context/UnifiedChatContext.tsx)
+
+
+
+Do not invent endpoints — verify in router files before implementing.
+
+
+
+Section A — Paste this into Cursor (full build prompt)
+
+# ROLE
+
+You are a staff-level Flutter engineer building **DeepTutor Mobile** — a production iOS/Android client for the existing Deep-Tutor platform. You write maintainable, testable Dart 3 code. You do not reimplement AI agents, RAG, or LLM orchestration on the client. All intelligence lives on the FastAPI backend.
+
+# NON-NEGOTIABLE RULES
+
+1. **API fidelity**: Every REST path and WS message type must match the backend in `deeptutor/api/routers/` and the web client in `web/lib/*-api.ts` and `web/lib/unified-ws.ts`. If unsure, read the file — never guess.
+2. **No business logic duplication**: The client renders streams, forms, and lists. Capabilities (`chat`, `deep_solve`, etc.) run server-side via `ChatOrchestrator`.
+3. **Three portals, one binary**: Single app with `go_router` guards by `PortalRole` (`student` | `mentor` | `recruiter`). No separate APKs per role in v1.
+4. **Auth tokens**: Login response JSON does **not** include the JWT. Tokens are set as `HttpOnly` cookies (`dt_token`, `dt_refresh_token`, `dt_role`). Mobile must parse `Set-Cookie` headers from `POST /api/v1/auth/login` and persist tokens in `flutter_secure_storage`, then send `Authorization: Bearer <dt_token>` on REST and `?token=<dt_token>` on WebSockets (mirror `web/lib/unified-ws.ts` `buildUnifiedWsUrl()`).
+5. **Role normalization** (security-critical, mirror `web/lib/rbac.ts`):
+   - `user` → `student`
+   - `admin` → `mentor` (legacy; never grant admin portal)
+   - invalid role → treat as logged out
+6. **404 resilience**: For read endpoints that may be missing on older backends, return typed empty defaults instead of crashing (pattern in `web/lib/workspace-api.ts` `workspaceGetJson`).
+7. **Incremental delivery**: Complete each phase with working navigation + tests before starting the next. Do not scaffold 80 empty screens.
+
+# REPOSITORY CONTEXT
+
+Deep-Tutor is agent-native:
+- **Tools** (Level 1): `rag`, `web_search`, `code_execution`, `reason`, `brainstorm`, `paper_search`, `geogebra_analysis`, `hidream_image`
+- **Capabilities** (Level 2): `chat`, `deep_solve`, `deep_question`, `deep_research`, `math_animator`, `visualize`, `coding_mentor`, `assessment`, `career_agent`, `whiteboard`
+- **Entry**: Unified WS `/api/v1/ws` + ~50 REST routers under `/api/v1`
+
+Local dev:
+```bash
+# Terminal 1 — backend
+cd <repo-root> && pip install -e ".[server]" && deeptutor serve --port 8001
+
+# Terminal 2 — Flutter
+cd mobile && flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8001  # Android emulator
+# iOS simulator: http://127.0.0.1:8001
+# Physical device: http://<LAN-IP>:8001
+
+TECH STACK (LOCKED — do not substitute without explicit approval)
+
+
+
+
+
+
+
+Concern
+
+
+
+Package
+
+
+
+
+
+Flutter SDK
+
+
+
+>=3.24, Dart >=3.5
+
+
+
+
+
+State
+
+
+
+flutter_riverpod + riverpod_annotation + codegen
+
+
+
+
+
+Navigation
+
+
+
+go_router
+
+
+
+
+
+HTTP
+
+
+
+dio + dio_cookie_manager + cookie_jar (login cookie capture)
+
+
+
+
+
+WS
+
+
+
+web_socket_channel — wrap in custom UnifiedWsClient
+
+
+
+
+
+Secure storage
+
+
+
+flutter_secure_storage
+
+
+
+
+
+Local DB
+
+
+
+drift (sessions cache, drafts, KB metadata)
+
+
+
+
+
+Immutable models
+
+
+
+freezed + json_serializable
+
+
+
+
+
+Markdown + math
+
+
+
+flutter_markdown, flutter_math_fork
+
+
+
+
+
+Code highlight
+
+
+
+flutter_highlight
+
+
+
+
+
+Charts
+
+
+
+fl_chart
+
+
+
+
+
+Files
+
+
+
+file_picker, path_provider
+
+
+
+
+
+Images
+
+
+
+cached_network_image
+
+
+
+
+
+Audio TTS
+
+
+
+just_audio (consume /api/v1/voice/generate URLs)
+
+
+
+
+
+Biometrics
+
+
+
+local_auth (optional unlock)
+
+
+
+
+
+Payments
+
+
+
+razorpay_flutter (Phase 6)
+
+
+
+
+
+Logging
+
+
+
+logger — never log token values
+
+PROJECT STRUCTURE
+
+Create mobile/ with this layout:
+
+mobile/
+├── pubspec.yaml
+├── analysis_options.yaml          # strict lints
+├── README.md
+├── Makefile                       # run, test, gen, build
+├── lib/
+│   ├── main.dart
+│   ├── app.dart                   # MaterialApp.router + theme
+│   ├── bootstrap.dart             # env, dio, drift, providers
+│   ├── core/
+│   │   ├── config/app_env.dart    # API_BASE_URL, AUTH_ENABLED
+│   │   ├── network/
+│   │   │   ├── dio_client.dart
+│   │   │   ├── api_exception.dart
+│   │   │   ├── auth_interceptor.dart
+│   │   │   └── cookie_token_extractor.dart
+│   │   ├── ws/unified_ws_client.dart   # PORT from web/lib/unified-ws.ts
+│   │   ├── auth/
+│   │   │   ├── auth_repository.dart
+│   │   │   ├── auth_session.dart
+│   │   │   ├── token_storage.dart
+│   │   │   └── rbac.dart
+│   │   ├── theme/app_theme.dart
+│   │   ├── routing/app_router.dart
+│   │   ├── routing/route_guards.dart
+│   │   └── widgets/               # shared buttons, error view, loading
+│   └── features/
+│       ├── auth/
+│       ├── student_dashboard/
+│       ├── chat/                  # unified chat — highest complexity
+│       ├── sessions/
+│       ├── knowledge/
+│       ├── practice/
+│       ├── coding_practice/
+│       ├── revision/
+│       ├── gamification/
+│       ├── analytics/
+│       ├── learning_plan/
+│       ├── onboarding/
+│       ├── tutor/
+│       ├── tutorbot/
+│       ├── co_writer/
+│       ├── book/
+│       ├── space/
+│       ├── mentor_portal/
+│       ├── recruiter_portal/
+│       ├── eip/
+│       ├── settings/
+│       └── notifications/
+├── test/
+└── integration_test/
+
+Each feature follows:
+data/{dto,api,repository_impl}.dart → domain/{entity,repository}.dart → application/{notifier,providers}.dart → presentation/{screen,widgets}.dart
+
+ENVIRONMENT
+
+lib/core/config/app_env.dart:
+
+class AppEnv {
+  static const apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8001',
+  );
+  static const authEnabled = bool.fromEnvironment(
+    'AUTH_ENABLED',
+    defaultValue: true,
+  );
+  static String get wsBaseUrl =>
+      apiBaseUrl.replaceFirst(RegExp(r'^http'), 'ws');
+}
+
+AUTHENTICATION — EXACT CONTRACT
+
+Login
+
+POST /api/v1/auth/login
+
+{ "username": "user@example.com", "password": "secret" }
+
+Success 200 body (no token in JSON):
+
+{
+  "ok": true,
+  "user_id": "...",
+  "username": "...",
+  "role": "student|mentor|recruiter",
+  "dashboard": "/dashboard|/mentor/dashboard|/recruiter/dashboard"
+}
+
+Cookies in response headers (parse ALL Set-Cookie):
+
+
+
+
+
+dt_token — JWT access token → store as accessToken
+
+
+
+dt_refresh_token — optional (Supabase) → store as refreshToken
+
+
+
+dt_role — UX hint only; recompute role from JWT payload or login body, then normalize
+
+Implement CookieTokenExtractor.parse(Set-Cookie headers) — mirror logic in web/lib/auth-proxy.ts parseSetCookieHeader.
+
+Register
+
+POST /api/v1/auth/register — body: { username, password, role? }
+GET /api/v1/auth/is_first_user — show role picker only when allowed
+
+Status
+
+GET /api/v1/auth/status with Authorization: Bearer <token>
+Returns: { enabled, authenticated, user_id?, username?, role? }
+
+Logout
+
+POST /api/v1/auth/logout + clear secure storage
+
+Auth interceptor
+
+
+
+
+
+Attach Authorization: Bearer on every request when authEnabled && token != null
+
+
+
+On 401: if refresh token exists, attempt Supabase refresh via cookie/header path; else ref.invalidate(authProvider) → /login
+
+
+
+Rate limit 429 on login: show lockout message from detail
+
+Post-login navigation
+
+String postLoginRoute(String rawRole, bool onboardingComplete) {
+  final role = normalizeRole(rawRole);
+  if (role == PortalRole.student && !onboardingComplete) return '/onboarding';
+  return dashboardForRole(role); // student→/home, mentor→/mentor, recruiter→/recruiter
+}
+
+UNIFIED WEBSOCKET CLIENT — PORT SPEC
+
+File: lib/core/ws/unified_ws_client.dart
+
+Constants (must match web/lib/unified-ws.ts):
+
+const heartbeatIntervalMs = 30000;
+const heartbeatTimeoutMs = 45000;
+const maxReconnectAttempts = 5;
+const baseReconnectDelayMs = 200;
+
+URL: {wsBaseUrl}/api/v1/ws?token={accessToken} when auth enabled.
+
+Outbound message types (JSON):
+
+
+
+
+
+
+
+type
+
+
+
+fields
+
+
+
+
+
+ping
+
+
+
+—
+
+
+
+
+
+message or start_turn
+
+
+
+see StartTurnPayload below
+
+
+
+
+
+subscribe_turn
+
+
+
+turn_id, after_seq?
+
+
+
+
+
+subscribe_session
+
+
+
+session_id, after_seq?
+
+
+
+
+
+resume_from
+
+
+
+turn_id, seq?
+
+
+
+
+
+unsubscribe
+
+
+
+turn_id?, session_id?
+
+
+
+
+
+cancel_turn
+
+
+
+turn_id
+
+
+
+
+
+regenerate
+
+
+
+session_id, overrides?
+
+StartTurnPayload:
+
+{
+  "type": "start_turn",
+  "content": "<user message>",           // required
+  "capability": "chat",                  // default
+  "tools": ["rag", "web_search"],        // optional subset
+  "knowledge_bases": ["my-kb"],
+  "session_id": "<uuid or null>",
+  "attachments": [{ "type", "url?", "base64?", "filename?", "mime_type?" }],
+  "language": "en",
+  "config": { },                         // capability-specific
+  "notebook_references": [{ "notebook_id", "record_ids": [] }],
+  "history_references": ["session-id"],
+  "question_notebook_references": [1, 2],
+  "book_references": [{ "book_id", "page_ids": [] }],
+  "skills": ["skill-name"],
+  "llm_selection": { "profile_id", "model_id" }
+}
+
+Capabilities (enum — validate before send):
+chat, deep_solve, deep_question, deep_research, math_animator, visualize, coding_mentor, assessment, career_agent, whiteboard
+
+Tools (enum):
+rag, web_search, code_execution, reason, brainstorm, paper_search, geogebra_analysis, hidream_image
+
+Inbound StreamEvent:
+
+class StreamEvent {
+  final String type;  // stage_start|stage_end|thinking|observation|content|
+                      // tool_call|tool_result|progress|sources|result|
+                      // error|session|done|ping|pong
+  final String source;
+  final String stage;
+  final String content;
+  final Map<String, dynamic> metadata;
+  final String? sessionId;
+  final String? turnId;
+  final int? seq;
+  final double timestamp;
+}
+
+Client behavior (copy UnifiedWSClient class semantics):
+
+
+
+
+
+Queue outbound messages until socket OPEN; flush on connect
+
+
+
+Track activeTurnId + lastSeq from events; call setResumeState before reconnect
+
+
+
+On reconnect: send resume_from with last turn/seq
+
+
+
+Exponential backoff reconnect: delay = 200 * 2^attempt, max 5 attempts
+
+
+
+Heartbeat: send ping every 30s; force close if no inbound for 45s
+
+
+
+Support Blob/string frames (UTF-8 JSON text)
+
+CHAT FEATURE — DETAILED SPEC
+
+Mirror web/context/UnifiedChatContext.tsx state machine.
+
+State per session (ChatSessionState)
+
+class ChatSessionState {
+  String? sessionId;
+  List<String> enabledTools;
+  String? activeCapability;       // default 'chat'
+  List<String> knowledgeBases;
+  LlmSelection? llmSelection;
+  List<ChatMessageItem> messages;
+  bool isStreaming;
+  String currentStage;
+  String language;
+  SessionRuntimeStatus status;    // idle|running|completed|failed|cancelled|rejected
+  String? activeTurnId;
+  int lastSeq;
+}
+
+Send flow
+
+
+
+
+
+Optimistic UI: append user ChatMessageItem with requestSnapshot
+
+
+
+ws.send(StartTurnPayload(...)) after waitForOpen(5000)
+
+
+
+On each StreamEvent:
+
+
+
+
+
+session → persist sessionId, update sidebar
+
+
+
+stage_start / stage_end → update currentStage timeline
+
+
+
+content → append to assistant bubble if shouldAppendEventContent (port from web/lib/stream.ts)
+
+
+
+tool_call / tool_result → render expandable cards
+
+
+
+sources → citation chips
+
+
+
+result → parse capability-specific JSON from metadata
+
+
+
+error → terminal error state
+
+
+
+done → isStreaming = false, refresh GET /api/v1/sessions/{id}
+
+
+
+Cancel → cancel_turn; Regenerate → regenerate with same session_id
+
+Capability-specific UI
+
+
+
+
+
+
+
+Capability
+
+
+
+Config keys (in start_turn.config)
+
+
+
+Result rendering
+
+
+
+
+
+chat
+
+
+
+—
+
+
+
+Markdown stream
+
+
+
+
+
+deep_solve
+
+
+
+—
+
+
+
+Structured solution from result.metadata
+
+
+
+
+
+deep_question
+
+
+
+num_questions, difficulty
+
+
+
+Quiz JSON → QuizResultWidget
+
+
+
+
+
+deep_research
+
+
+
+depth, outline fields
+
+
+
+Report markdown + outline editor
+
+
+
+
+
+deep_research
+
+
+
+—
+
+
+
+Long report with section nav
+
+
+
+
+
+math_animator
+
+
+
+manim params
+
+
+
+Video/file URL from result
+
+
+
+
+
+visualize
+
+
+
+chart type hints
+
+
+
+Image/chart URL
+
+
+
+
+
+coding_mentor
+
+
+
+language
+
+
+
+Markdown + code blocks
+
+
+
+
+
+whiteboard
+
+
+
+—
+
+
+
+Canvas / drawing widget
+
+REST companions
+
+
+
+
+
+GET /api/v1/sessions — sidebar list
+
+
+
+GET /api/v1/sessions/{id} — hydrate history on open
+
+
+
+PATCH /api/v1/sessions/{id} — rename
+
+
+
+DELETE /api/v1/sessions/{id}
+
+
+
+GET /api/v1/knowledge/list — KB picker
+
+
+
+GET /api/v1/skills/list — skills picker
+
+
+
+GET /api/v1/multi-user/me/access — visible KBs + model access
+
+
+
+Attachments served at /api/attachments/{sessionId}/{attachmentId}/{filename}
+
+Chat screens
+
+
+
+
+
+/chat — session list (master on tablet)
+
+
+
+/chat/:sessionId — conversation
+
+
+
+Composer bottom sheet: capability selector, tool chips, KB multi-select, attach file, model picker (/api/v1/model-routing/catalog)
+
+NAVIGATION — go_router TABLE
+
+// Public
+'/splash'
+'/login'
+'/register'
+'/forgot-password'        // UI only until API exists
+'/eip/public/:handle'     // no auth
+
+// Student shell — BottomNav: Home | Learn | Practice | Progress | More
+'/home'                   // dashboard (web /dashboard)
+'/onboarding'             // gate: redirect here if profile incomplete
+'/chat'
+'/chat/:sessionId'
+'/tutor'
+'/tutor/:lessonId'
+'/agents'
+'/agents/:botId/chat'
+'/knowledge'
+'/co-writer'
+'/co-writer/:docId'
+'/book'
+'/learning/mentor'
+'/learning/mentor/messages'
+'/roadmap'
+'/eip'
+'/practice'
+'/coding-practice'
+'/revision'
+'/assessments'
+'/mock-test'
+'/analytics'
+'/achievements'
+'/missions'
+'/calendar'
+'/notifications'
+'/career'
+'/resume'
+'/profile-cv'
+'/space/chat-history'
+'/space/notebooks'
+'/space/questions'
+'/space/skills'
+'/space/memory'
+'/settings'
+'/billing'
+
+// Mentor shell — separate Scaffold + drawer
+'/mentor'
+'/mentor/dashboard'
+'/mentor/students'
+'/mentor/student/:id'
+'/mentor/interventions'
+'/mentor/messages'
+'/mentor/analytics'
+'/mentor/profile'
+'/mentor/availability'
+'/mentor/sessions'
+'/mentor/notes'
+
+// Recruiter shell
+'/recruiter'
+'/recruiter/dashboard'
+'/recruiter/search'
+'/recruiter/candidate/:id'
+'/recruiter/bookmarks'
+'/recruiter/saved-searches'
+'/recruiter/analytics'
+
+Guards: redirect: (context, state) { ... } — read authSessionProvider, normalizeRole, block cross-portal paths (student cannot access /mentor/*).
+
+SCREEN-BY-SCREEN API MAP (STUDENT)
+
+Implement each screen as a ConsumerWidget with a dedicated @riverpod notifier.
+
+
+
+
+
+
+
+Screen
+
+
+
+Primary endpoints
+
+
+
+
+
+Home
+
+
+
+GET /workflow/journey, /workflow/next, /gamification/state, /missions/today, /notifications, /dashboard/recent
+
+
+
+
+
+Onboarding
+
+
+
+GET/PUT /learning-profile, POST /diagnostic/start, /diagnostic/finish
+
+
+
+
+
+Chat
+
+
+
+WS /api/v1/ws + sessions API
+
+
+
+
+
+Knowledge
+
+
+
+/knowledge/list, POST /create, POST /{kb}/upload, POST /{kb}/reindex, WS /{kb}/progress/ws
+
+
+
+
+
+Practice
+
+
+
+/practice/topics, /questions, POST /check, /submit
+
+
+
+
+
+Coding
+
+
+
+/coding-practice/toolchains, /problem, POST /run, /submit, exam endpoints
+
+
+
+
+
+Revision
+
+
+
+/revision/queue, POST /review
+
+
+
+
+
+Analytics
+
+
+
+/analytics/summary, /topic-mastery, /xp-trend, /time-distribution, /weak-areas
+
+
+
+
+
+Achievements
+
+
+
+/achievements, /leaderboard, POST /{badge_id}/claim
+
+
+
+
+
+Roadmap
+
+
+
+/learning-plan, PATCH /milestones/{id}, /career/paths
+
+
+
+
+
+Tutor
+
+
+
+local drift lessons + POST /voice/generate, POST /speech/transcribe
+
+
+
+
+
+TutorBot
+
+
+
+/tutorbot/*, WS /tutorbot/{id}/ws
+
+
+
+
+
+Co-Writer
+
+
+
+/co_writer/documents CRUD + edit stream
+
+
+
+
+
+Book
+
+
+
+/book/books, pages, blocks, WS /book/ws
+
+
+
+
+
+Space
+
+
+
+/sessions, /notebook/*, /question-notebook/*, /skills/*, /memory
+
+
+
+
+
+EIP
+
+
+
+/eip/settings, public /eip/public/{handle}
+
+
+
+
+
+Settings
+
+
+
+/settings, /catalog, POST /apply, /system/status
+
+
+
+
+
+Billing
+
+
+
+/payments/razorpay/status, /order, /verify
+
+MENTOR & RECRUITER PORTALS
+
+Swap root ShellRoute when role == mentor|recruiter. Reuse shared widgets (lists, charts, message threads).
+
+Mentor — all under require_mentor_access:
+
+
+
+
+
+GET /api/v1/mentor/dashboard
+
+
+
+GET /api/v1/mentor/students, /mentor/student/{id}
+
+
+
+GET /api/v1/mentor/interventions
+
+
+
+Mentor messages + GET/PATCH /api/mentor/me, /availability, /sessions
+
+
+
+POST /api/v1/learning/graph/sync (mentor-only)
+
+Recruiter — require_recruiter_access:
+
+
+
+
+
+GET /api/v1/recruiter/dashboard
+
+
+
+GET /api/v1/recruiter/candidates/search
+
+
+
+GET /api/v1/recruiter/candidates/{id}
+
+
+
+Bookmark, notes, tags, saved-searches endpoints
+
+THEME — MATCH WEB
+
+From web/app/globals.css — implement ThemeExtension + light/dark ColorScheme:
+
+
+
+
+
+
+
+Token
+
+
+
+Light (OKLCH)
+
+
+
+Flutter notes
+
+
+
+
+
+primary
+
+
+
+oklch(0.52 0.19 264)
+
+
+
+indigo/violet — convert via OKLCH→sRGB
+
+
+
+
+
+background
+
+
+
+oklch(1 0 0)
+
+
+
+scaffold
+
+
+
+
+
+foreground
+
+
+
+oklch(0.1448 0 0)
+
+
+
+text
+
+
+
+
+
+destructive
+
+
+
+oklch(0.583 0.2387 28.4765)
+
+
+
+errors
+
+
+
+
+
+radius-card
+
+
+
+1.5rem
+
+
+
+BorderRadius.circular(24)
+
+
+
+
+
+radius-btn
+
+
+
+9999px
+
+
+
+pill buttons
+
+Dark mode primary shifts to orange tone oklch(0.6397 0.172 36.4421) — support ThemeMode.system.
+
+Typography: use google_fonts — Inter or Geist if available; body 14–16sp, headings semi-bold.
+
+UI/UX STANDARDS
+
+
+
+
+
+Minimum touch target: 48×48 dp
+
+
+
+Chat composer: sticky above keyboard; resizeToAvoidBottomInset: true
+
+
+
+Streaming: show stage timeline (collapsible); shimmer on active stage
+
+
+
+Pull-to-refresh: all ListView screens
+
+
+
+Empty states: illustration + CTA button
+
+
+
+Errors: map DioException → ApiException with detail from FastAPI JSON
+
+
+
+Tablet: NavigationRail + master-detail for /chat and /knowledge
+
+
+
+Deep links: deeptutor://chat/{sessionId}, deeptutor://eip/{handle}
+
+
+
+Accessibility: Semantics on icon-only buttons; contrast >= 4.5:1
+
+TESTING REQUIREMENTS
+
+Per phase, deliver:
+
+
+
+
+
+Unit: repositories with MockDio + fixture JSON from real backend responses
+
+
+
+Widget: golden test for login form, chat bubble markdown
+
+
+
+Integration: integration_test/chat_flow_test.dart — mock WS server OR test against local backend
+
+Manual matrix (document in mobile/docs/TEST_MATRIX.md):
+
+
+
+
+
+Login student/mentor/recruiter
+
+
+
+WS stream + reconnect + resume_from
+
+
+
+Upload 10MB PDF to KB
+
+
+
+Cancel mid-turn
+
+
+
+Regenerate
+
+
+
+Coding exam violation on app background
+
+
+
+Offline session list read
+
+PHASED DELIVERY (STRICT ORDER)
+
+Phase 0 — Scaffold (1–2 days)
+
+
+
+
+
+flutter create, folder structure, bootstrap.dart, AppEnv, theme, go_router skeleton
+
+
+
+dio + cookie extractor + AuthRepository + login/register/logout flow
+
+
+
+AuthGuard + role normalization
+
+
+
+README with run commands
+
+Phase 1 — Chat MVP (1–2 weeks) CRITICAL PATH
+
+
+
+
+
+UnifiedWsClient complete port
+
+
+
+ChatNotifier + session list + conversation UI
+
+
+
+All capabilities selectable; default tools for chat
+
+
+
+KB attach + file picker
+
+
+
+Session CRUD
+
+Phase 2 — Student home & learning loop
+
+
+
+
+
+Dashboard, onboarding gate, gamification, missions, notifications
+
+
+
+Practice, revision, roadmap, diagnostic
+
+Phase 3 — Knowledge & settings
+
+
+
+
+
+KB manager + upload + progress WS
+
+
+
+Settings + model catalog + apply
+
+Phase 4 — Rich content
+
+
+
+
+
+TutorBot, Co-Writer, Book, Space (memory, notebooks, skills)
+
+Phase 5 — Mentor portal
+
+Phase 6 — Recruiter + EIP public + billing + polish
+
+OUT OF SCOPE v1
+
+
+
+
+
+Playground /api/v1/plugins dev UI
+
+
+
+TutorBot channel deployment editing (Discord/Slack/Matrix…) — read-only schema display OK
+
+
+
+Linked-folder KB sync (desktop-only)
+
+
+
+Sidebar nav order customization
+
+
+
+Next.js BFF routes (/api/auth/*) — mobile uses backend directly
+
+CURSOR WORKFLOW INSTRUCTIONS
+
+When implementing a feature:
+
+
+
+
+
+Read the matching web/lib/<feature>-api.ts and backend router in deeptutor/api/routers/<feature>.py
+
+
+
+Create freezed DTOs in features/<feature>/data/dto/
+
+
+
+Implement repository → notifier → screen
+
+
+
+Add route to app_router.dart
+
+
+
+Add widget test + manual test step to matrix
+
+
+
+Run dart analyze and flutter test before marking done
+
+When stuck on WS behavior, read web/context/UnifiedChatContext.tsx — it is the authoritative client state machine.
+
+ACCEPTANCE CRITERIA (DEFINITION OF DONE)
+
+The app is v1 complete when:
+
+
+
+
+
+A student can register, complete onboarding, chat with all capabilities, attach KBs, and view session history
+
+
+
+Practice + coding + revision + analytics + achievements work against live backend
+
+
+
+Knowledge upload indexes with live progress
+
+
+
+Mentor can view cohort, students, interventions, messages
+
+
+
+Recruiter can search, bookmark, and view candidate EIP
+
+
+
+Public EIP renders without login
+
+
+
+No P0 crashes on cold start / logout / WS reconnect
+
+
+
+flutter analyze has zero errors; flutter test passes in CI
+
+OPTIONAL BACKEND IMPROVEMENT
+
+Consider adding to login/register JSON response:
+
+{ "access_token": "...", "refresh_token": "..." }
+
+for cleaner mobile auth (today requires Set-Cookie parsing). Do not block mobile on this — cookie parsing works today.
+
+
+---
+
+## Section B — Auth implementation snippet (reference for Cursor)
+
+```dart
+// cookie_token_extractor.dart — senior pattern
+List<String> extractSetCookieHeaders(Headers headers) {
+  // Dio may expose headers['set-cookie'] as list
+  final raw = headers['set-cookie'];
+  if (raw == null) return [];
+  return raw is List ? raw.cast<String>() : [raw.toString()];
+}
+
+Future<AuthSession> login(LoginRequest body) async {
+  final res = await _dio.post('/api/v1/auth/login', data: body.toJson());
+  final cookies = extractSetCookieHeaders(res.headers);
+  final access = _parseCookie(cookies, 'dt_token');
+  final refresh = _parseCookie(cookies, 'dt_refresh_token');
+  if (access == null) throw ApiException('No dt_token in Set-Cookie');
+  final data = LoginResponse.fromJson(res.data);
+  return AuthSession(
+    accessToken: access,
+    refreshToken: refresh,
+    userId: data.userId,
+    username: data.username,
+    role: normalizeRole(data.role),
+  );
+}
+
+
+
+Section C — Web route → Flutter screen parity checklist
+
+
+
+
+
+
+
+Web route
+
+
+
+Flutter route
+
+
+
+Phase
+
+
+
+
+
+/login
+
+
+
+/login
+
+
+
+0
+
+
+
+
+
+/register
+
+
+
+/register
+
+
+
+0
+
+
+
+
+
+/dashboard
+
+
+
+/home
+
+
+
+2
+
+
+
+
+
+/onboarding
+
+
+
+/onboarding
+
+
+
+2
+
+
+
+
+
+/chat, /chat/[id]
+
+
+
+/chat, /chat/:id
+
+
+
+1
+
+
+
+
+
+/knowledge
+
+
+
+/knowledge
+
+
+
+3
+
+
+
+
+
+/tutor
+
+
+
+/tutor
+
+
+
+4
+
+
+
+
+
+/agents
+
+
+
+/agents
+
+
+
+4
+
+
+
+
+
+/co-writer
+
+
+
+/co-writer
+
+
+
+4
+
+
+
+
+
+/book
+
+
+
+/book
+
+
+
+4
+
+
+
+
+
+/practice
+
+
+
+/practice
+
+
+
+2
+
+
+
+
+
+/coding-practice
+
+
+
+/coding-practice
+
+
+
+2
+
+
+
+
+
+/revision
+
+
+
+/revision
+
+
+
+2
+
+
+
+
+
+/roadmap
+
+
+
+/roadmap
+
+
+
+2
+
+
+
+
+
+/analytics
+
+
+
+/analytics
+
+
+
+2
+
+
+
+
+
+/achievements
+
+
+
+/achievements
+
+
+
+2
+
+
+
+
+
+/mentor/*
+
+
+
+/mentor/*
+
+
+
+5
+
+
+
+
+
+/recruiter/*
+
+
+
+/recruiter/*
+
+
+
+6
+
+
+
+
+
+/eip/public/[handle]
+
+
+
+/eip/public/:handle
+
+
+
+6
+
+
+
+
+
+/settings
+
+
+
+/settings
+
+
+
+3
+
+
+
+
+
+/billing
+
+
+
+/billing
+
+
+
+6
+
+
+
+Section D — Architecture
+
+flowchart TB
+  subgraph presentation [Presentation]
+    Screens[Screens / Widgets]
+    Notifiers[Riverpod Notifiers]
+  end
+  subgraph domain [Domain]
+    RepoIface[Repository Interfaces]
+    Entities[Entities]
+  end
+  subgraph data [Data]
+  RepoImpl[Repository Impl]
+  DioApi[Dio API Clients]
+  WsClient[UnifiedWsClient]
+  DriftDb[Drift Cache]
+  end
+  subgraph backend [Backend :8001]
+  REST["/api/v1/*"]
+  UWS["/api/v1/ws"]
+  end
+  Screens --> Notifiers --> RepoIface
+  RepoImpl -.-> RepoIface
+  RepoImpl --> DioApi --> REST
+  RepoImpl --> WsClient --> UWS
+  RepoImpl --> DriftDb
+
+
+
+Section E — Files Cursor must read first (per feature)
+
+
+
+
+
+
+
+Feature
+
+
+
+Read first
+
+
+
+
+
+Auth
+
+
+
+deeptutor/api/routers/auth.py, web/lib/auth.ts, web/lib/auth-proxy.ts
+
+
+
+
+
+Chat/WS
+
+
+
+web/lib/unified-ws.ts, web/context/UnifiedChatContext.tsx, deeptutor/api/routers/unified_ws.py
+
+
+
+
+
+Sessions
+
+
+
+web/lib/session-api.ts, deeptutor/api/routers/sessions.py
+
+
+
+
+
+Knowledge
+
+
+
+web/lib/knowledge-api.ts, deeptutor/api/routers/knowledge.py
+
+
+
+
+
+RBAC
+
+
+
+web/lib/rbac.ts, deeptutor/services/rbac.py
+
+
+
+
+
+Workspace
+
+
+
+web/lib/workspace-api.ts
+
+
+
+
+
+Mentor
+
+
+
+web/lib/mentor-api.ts, deeptutor/api/routers/mentor*.py
+
+
+
+
+
+Recruiter
+
+
+
+web/lib/recruiter-api.ts
+
+
+
+Decisions baked into this prompt (override only if user says so)
+
+
+
+
+
+Single app, role-based shells (recommended for v1)
+
+
+
+Riverpod over Bloc
+
+
+
+Set-Cookie token extraction (no backend change required)
+
+
+
+Android emulator uses 10.0.2.2 for host loopback
+
+
+
+Phased delivery — chat before mentor/recruiter portals
+

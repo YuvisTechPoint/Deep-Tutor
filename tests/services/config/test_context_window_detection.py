@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from deeptutor.services.config import context_window_detection as _cwd_module
 from deeptutor.services.config.context_window_detection import (
     detect_context_window,
 )
@@ -36,7 +37,8 @@ async def _metadata_none(*_args, **_kwargs):
 
 def test_detect_context_window_prefers_provider_metadata(monkeypatch) -> None:
     monkeypatch.setattr(
-        "deeptutor.services.config.context_window_detection._detect_from_models_endpoint",
+        _cwd_module,
+        "_detect_from_models_endpoint",
         _metadata_128k,
     )
     result = asyncio.run(detect_context_window(_config(model="kimi-k2.6")))
@@ -49,7 +51,8 @@ def test_detect_context_window_uses_runtime_default_when_metadata_missing(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "deeptutor.services.config.context_window_detection._detect_from_models_endpoint",
+        _cwd_module,
+        "_detect_from_models_endpoint",
         _metadata_none,
     )
     result = asyncio.run(detect_context_window(_config(model="unknown-model", max_tokens=5000)))

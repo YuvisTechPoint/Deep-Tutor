@@ -129,21 +129,15 @@ def test_session_list_command_uses_shared_store(monkeypatch) -> None:
     assert "Algebra" in result.output
 
 
-def test_start_command_propagates_start_web_exit_code(monkeypatch) -> None:
-    from pathlib import Path
+def test_start_command_delegates_to_serve(monkeypatch) -> None:
+    calls: list[tuple[str, int, bool]] = []
 
-    class Result:
-        returncode = 7
+    def _fake_serve(host: str, port: int, reload: bool) -> None:
+        calls.append((host, port, reload))
 
-    def _fake_run(cmd, check=False):  # noqa: ANN001
-        assert check is False
-        assert cmd[0]
-        script = Path(cmd[1]).as_posix()
-        assert script.endswith("scripts/start_web.py")
-        return Result()
+    monkeypatch.setattr("deeptutor_cli.main.serve", _fake_serve)
 
-    monkeypatch.setattr("subprocess.run", _fake_run)
+    result = runner.invoke(app, ["start", "--port", "8123", "--reload"])
 
-    result = runner.invoke(app, ["start"])
-
-    assert result.exit_code == 7
+    assert result.exit_code == 0
+    assert calls == [("0.0.0.0", 8123, True)]

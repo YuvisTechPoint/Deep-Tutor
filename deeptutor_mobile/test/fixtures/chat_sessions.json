@@ -1,0 +1,15 @@
+[
+  {
+    "session_id": "sess-abc-123",
+    "title": null,
+    "created_at": "2025-05-18T10:00:00Z",
+    "updated_at": "2025-05-18T11:30:00Z",
+    "message_count": 4,
+    "last_message": "Explain gradient descent"
+  },
+  {
+    "session_id": "sess-def-456",
+    "title": "Python loops",
+    "updated_at": "2025-05-17T09:00:00Z"
+  }
+]

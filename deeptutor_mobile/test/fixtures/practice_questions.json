@@ -1,0 +1,20 @@
+{
+  "quiz_id": "quiz-xyz",
+  "items": [
+    {
+      "id": "q1",
+      "question": "What is O(n)?",
+      "options": [
+        {"key": "A", "text": "Constant time"},
+        {"key": "B", "text": "Linear time"},
+        {"key": "C", "text": "Quadratic time"}
+      ],
+      "difficulty": "medium",
+      "topic": "algorithms"
+    }
+  ],
+  "filters": {
+    "topic": "algorithms",
+    "difficulty": "medium"
+  }
+}

@@ -15,7 +15,7 @@ from typing import Optional
 
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
-from deeptutor.services.rag.factory import DEFAULT_PROVIDER
+from deeptutor.services.rag.factory import DEFAULT_PROVIDER, normalize_provider_name
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.service import RAGService
 
@@ -44,7 +44,7 @@ class KnowledgeBaseInitializer:
         self.api_key = api_key
         self.base_url = base_url
         self.progress_tracker = progress_tracker or ProgressTracker(self.kb_name, self.base_dir)
-        self.rag_provider = DEFAULT_PROVIDER
+        self.rag_provider = normalize_provider_name(rag_provider)
 
     def _register_to_config(self) -> None:
         """Register KB in kb_config.json with initializing state."""
@@ -70,7 +70,7 @@ class KnowledgeBaseInitializer:
             manager.config = manager._load_config()
             manager.config.setdefault("knowledge_bases", {}).setdefault(self.kb_name, {})[
                 "rag_provider"
-            ] = DEFAULT_PROVIDER
+            ] = self.rag_provider
             manager._save_config()
         except Exception as e:
             logger.warning(f"Failed to register KB to config: {e}")
@@ -85,7 +85,7 @@ class KnowledgeBaseInitializer:
             except Exception:
                 metadata = {}
 
-        metadata["rag_provider"] = DEFAULT_PROVIDER
+        metadata["rag_provider"] = provider
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         metadata["last_updated"] = timestamp
         metadata["last_indexed_at"] = timestamp
@@ -143,8 +143,8 @@ class KnowledgeBaseInitializer:
     async def process_documents(
         self,
     ) -> bool:
-        """Process documents with llamaindex provider."""
-        provider = DEFAULT_PROVIDER
+        """Process documents with the KB's configured RAG pipeline."""
+        provider = self.rag_provider
 
         self.progress_tracker.update(
             ProgressStage.PROCESSING_DOCUMENTS,
@@ -172,7 +172,7 @@ class KnowledgeBaseInitializer:
 
         rag_service = RAGService(
             kb_base_dir=str(self.base_dir),
-            provider=provider,
+            pipeline_name=provider,
         )
         file_paths = [str(doc_file) for doc_file in doc_files]
 
@@ -240,7 +240,7 @@ class KnowledgeBaseInitializer:
         logger.info("=" * 50)
         logger.info(f"Raw documents: {len(raw_files)}")
         logger.info(f"Index versions: {len(index_versions)}")
-        logger.info(f"Provider used: {DEFAULT_PROVIDER}")
+        logger.info(f"Provider used: {self.rag_provider}")
         logger.info("=" * 50)
 
 

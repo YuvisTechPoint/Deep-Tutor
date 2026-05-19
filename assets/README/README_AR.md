@@ -124,7 +124,7 @@
 - **مركز المعرفة** — قواعد RAG، دفاتر ملوّنة، بنك أسئلة، Skills مخصّصة لتشكيل أسلوب التدريس.
 - **ذاكرة دائمة** — ملخّص التقدّم وملف المتعلّم؛ مشتركة مع TutorBots.
 - **TutorBots شخصية** — ليست روبوتات دردشة: مدرّسون مستقلّون بمساحة عمل وذاكرة وشخصية ومهارات. يعمل بـ [nanobot](https://github.com/HKUDS/nanobot).
-- **CLI أصلي للوكلاء** — القدرات وقواعد المعرفة والجلسات وTutorBot بأمر واحد؛ Rich وJSON. [`SKILL.md`](../../SKILL.md).
+- **CLI أصلي للوكلاء** — القدرات وقواعد المعرفة والجلسات وTutorBot بأمر واحد؛ Rich وJSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ---
 
@@ -330,10 +330,10 @@ cp .env.example .env
 تُنشر الصور الرسمية على [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) مع كل إصدار لـ `linux/amd64` و`linux/arm64`.
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-لتثبيت إصدار محدّد، عدّل وسم الصورة في `docker-compose.ghcr.yml`:
+لتثبيت إصدار محدّد، عدّل وسم الصورة في `docker-compose.yml (profile ghcr)`:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.0.0  # أو :latest
@@ -418,7 +418,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 اطبق طبقة التطوير لتركيب الشيفرة وتفعيل الإعادة الساخنة لكلا الخدمتين:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 تنعكس التغييرات في `deeptutor/` و`deeptutor_cli/` و`scripts/` و`web/` فورًا.
@@ -438,7 +438,7 @@ FRONTEND_PORT=4000
 ثم أعد التشغيل:
 
 ```bash
-docker compose up -d     # أو docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # أو docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -614,7 +614,7 @@ deeptutor bot list
 <img src="../../assets/figs/cli-architecture.png" alt="CLI" width="800">
 </div>
 
-بدون متصفح: القدرات وقواعد المعرفة والجلسات والذاكرة وTutorBot. Rich + JSON. [`SKILL.md`](../../SKILL.md).
+بدون متصفح: القدرات وقواعد المعرفة والجلسات والذاكرة وTutorBot. Rich + JSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ```bash
 deeptutor run chat "Explain the Fourier transform" -t rag --kb textbook

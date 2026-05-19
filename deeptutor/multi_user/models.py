@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-Role = Literal["admin", "user"]
+Role = Literal["admin", "user", "student", "mentor", "recruiter", "institution"]
 ScopeKind = Literal["admin", "user"]
 
 
@@ -14,7 +14,7 @@ ScopeKind = Literal["admin", "user"]
 class UserRecord:
     id: str
     username: str
-    role: Role = "user"
+    role: Role = "student"
     created_at: str = ""
     disabled: bool = False
 
@@ -49,6 +49,11 @@ class CurrentUser:
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    @property
+    def is_platform_staff(self) -> bool:
+        """True for admin or institutional operator roles (not learners)."""
+        return self.role in {"admin", "institution"}
 
     def public_dict(self) -> dict[str, Any]:
         return {

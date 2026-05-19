@@ -14,18 +14,48 @@ FastAPI routers which add async-friendly locking via ``asyncio.Lock``.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 import json
 import logging
 import os
-import threading
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+import threading
 from typing import Any
 
 from deeptutor.services.path_service import get_path_service
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Swag / reward catalog (XP redemption; fulfillment is demo-only) ─────────
+
+REWARD_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {
+        "id": "swag_tshirt",
+        "title": "DeepTutor T-shirt",
+        "description": "Limited-run learner tee — claim with XP (demo fulfillment).",
+        "xp_cost": 450,
+    },
+    {
+        "id": "goodies_bag",
+        "title": "Goodies bag",
+        "description": "Pins, stickers, and a pocket notebook.",
+        "xp_cost": 280,
+    },
+    {
+        "id": "swag_pack",
+        "title": "Swag pack",
+        "description": "Sticker sheet, water bottle, and canvas tote.",
+        "xp_cost": 650,
+    },
+    {
+        "id": "study_kit",
+        "title": "Study kit",
+        "description": "Printable templates, bookmark set, and focus checklist pad.",
+        "xp_cost": 920,
+    },
+)
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -190,25 +220,37 @@ class GamificationStore:
     _instance_lock = threading.Lock()
 
     def __init__(self, base_dir: Path | None = None) -> None:
-        if base_dir is None:
-            svc = get_path_service()
-            base_dir = svc.user_data_dir / "learning"
-        self._base = base_dir
+        self._base_override = base_dir
+        self._base: Path | None = None
+        self._ledger: Path | None = None
+        self._state_file: Path | None = None
+        self._notif_file: Path | None = None
+        self._mission_file: Path | None = None
+        self._lock = threading.Lock()
+        self._async_lock = asyncio.Lock()
+
+    # ── Singleton ────────────────────────────────────────────────────────────
+
+    def _ensure_paths(self) -> None:
+        base = self._base_override
+        if base is None:
+            base = get_path_service().user_data_dir / "learning"
+        base = base.resolve()
+        if self._base == base:
+            return
+        self._base = base
         self._base.mkdir(parents=True, exist_ok=True)
         self._ledger = self._base / "xp_events.jsonl"
         self._state_file = self._base / "gamification.json"
         self._notif_file = self._base / "notifications.json"
         self._mission_file = self._base / "missions_state.json"
-        self._lock = threading.Lock()
-        self._async_lock = asyncio.Lock()
-
-    # ── Singleton ────────────────────────────────────────────────────────────
 
     @classmethod
     def get_instance(cls) -> "GamificationStore":
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = cls()
+            cls._instance._ensure_paths()
             return cls._instance
 
     @classmethod
@@ -219,6 +261,7 @@ class GamificationStore:
     # ── Internal IO helpers ──────────────────────────────────────────────────
 
     def _read_json(self, path: Path, default: Any) -> Any:
+        self._ensure_paths()
         if not path.exists():
             return default
         try:
@@ -228,15 +271,20 @@ class GamificationStore:
             return default
 
     def _write_json(self, path: Path, data: Any) -> None:
+        self._ensure_paths()
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, path)
 
     def _append_ledger(self, event: XPEvent) -> None:
+        self._ensure_paths()
+        assert self._ledger is not None
         with self._ledger.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
 
     def _load_ledger(self) -> list[XPEvent]:
+        self._ensure_paths()
+        assert self._ledger is not None
         if not self._ledger.exists():
             return []
         events: list[XPEvent] = []
@@ -335,6 +383,11 @@ class GamificationStore:
         badges_unlocked = stored.get("badges_unlocked") or {}
         derived["badges_unlocked"] = badges_unlocked
         derived["mission_completions"] = stored.get("mission_completions") or {}
+        spent = int(stored.get("reward_xp_spent_total") or 0)
+        total_xp = int(derived["total_xp"])
+        derived["reward_xp_spent_total"] = spent
+        derived["reward_claims"] = list(stored.get("reward_claims") or [])
+        derived["reward_xp_balance"] = max(0, total_xp - spent)
         derived["level"] = compute_level(derived["total_xp"]).to_dict()
         derived["last_synced_at"] = datetime.now(timezone.utc).isoformat()
         return derived
@@ -351,7 +404,7 @@ class GamificationStore:
         streak_current = state.get("streak_current", 0)
         streak_max = state.get("streak_max", 0)
         xp_per_source = state.get("xp_per_source") or {}
-        problems_solved = int(self._count_actions("practice.correct_answer"))
+        problems_solved = int(self._count_problem_solves())
         voice_sessions = int(self._count_actions("voice.session_complete"))
         results: list[dict[str, Any]] = []
         for b in DEFAULT_BADGES:
@@ -390,6 +443,10 @@ class GamificationStore:
 
     def _count_actions(self, action: str) -> int:
         return sum(1 for e in self._load_ledger() if e.action == action)
+
+    def _count_problem_solves(self) -> int:
+        solved = {"practice.correct_answer", "coding_practice.solve"}
+        return sum(1 for e in self._load_ledger() if e.action in solved)
 
     @staticmethod
     def _badge_progress(
@@ -456,7 +513,7 @@ class GamificationStore:
         )
         with self._lock:
             self._append_ledger(event)
-        self._maybe_unlock_badges()
+            self._maybe_unlock_badges()
         return event
 
     def _maybe_unlock_badges(self) -> None:
@@ -465,7 +522,7 @@ class GamificationStore:
         unlocked = dict(stored.get("badges_unlocked") or {})
         total_xp = state["total_xp"]
         streak_max = state["streak_max"]
-        problems_solved = self._count_actions("practice.correct_answer")
+        problems_solved = self._count_problem_solves()
         voice_sessions = self._count_actions("voice.session_complete")
         now = datetime.now(timezone.utc).isoformat()
         thresholds: list[tuple[str, bool]] = [
@@ -524,14 +581,78 @@ class GamificationStore:
         today = datetime.now(timezone.utc).date().isoformat()
         return f"{today}::{mission_id}" in completions
 
+    # ── Reward redemptions (spend lifetime XP without changing the XP ledger) ─
+
+    @staticmethod
+    def reward_catalog() -> list[dict[str, Any]]:
+        return [dict(item) for item in REWARD_DEFINITIONS]
+
+    def claim_reward(self, reward_id: str) -> dict[str, Any]:
+        """Spend *reward_xp_balance* (lifetime XP minus prior redemptions)."""
+
+        by_id = {str(r["id"]): r for r in REWARD_DEFINITIONS}
+        if reward_id not in by_id:
+            raise ValueError("Unknown reward")
+        item = by_id[reward_id]
+        xp_cost = int(item["xp_cost"])
+        if xp_cost <= 0:
+            raise ValueError("Invalid reward cost")
+
+        with self._lock:
+            derived = self._derive_state()
+            total_xp = int(derived["total_xp"])
+            stored = self._read_json(self._state_file, {})
+            spent = int(stored.get("reward_xp_spent_total") or 0)
+            balance = max(0, total_xp - spent)
+            if balance < xp_cost:
+                raise ValueError(
+                    f"Not enough XP (need {xp_cost}, have {balance} available to spend)",
+                )
+            claims = list(stored.get("reward_claims") or [])
+            now = datetime.now(timezone.utc).isoformat()
+            claim_row = {
+                "reward_id": reward_id,
+                "title": str(item["title"]),
+                "xp_cost": xp_cost,
+                "claimed_at": now,
+            }
+            claims.insert(0, claim_row)
+            stored["reward_claims"] = claims[:200]
+            new_spent = spent + xp_cost
+            stored["reward_xp_spent_total"] = new_spent
+            self._write_json(self._state_file, stored)
+            new_balance = max(0, total_xp - new_spent)
+
+        try:
+            self.add_notification(
+                {
+                    "type": "reward_claim",
+                    "title": "Reward claimed",
+                    "message": f"You claimed “{item['title']}” for {xp_cost} XP.",
+                    "is_system": True,
+                },
+            )
+        except Exception:
+            logger.warning("Could not add reward claim notification", exc_info=True)
+
+        return {
+            "claim": claim_row,
+            "reward_xp_balance": new_balance,
+            "reward_xp_spent_total": new_spent,
+            "total_xp": total_xp,
+        }
+
     # ── Notifications ────────────────────────────────────────────────────────
 
     def list_notifications(self) -> list[dict[str, Any]]:
-        data = self._read_json(self._notif_file, None)
-        if data is None:
-            data = []
-            self._write_json(self._notif_file, data)
-        return list(data)
+        self._ensure_paths()
+        assert self._notif_file is not None
+        with self._lock:
+            data = self._read_json(self._notif_file, None)
+            if data is None:
+                data = []
+                self._write_json(self._notif_file, data)
+            return list(data)
 
     def add_notification(self, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -605,6 +726,7 @@ __all__ = [
     "DEFAULT_BADGES",
     "GamificationStore",
     "LevelInfo",
+    "REWARD_DEFINITIONS",
     "XPEvent",
     "compute_level",
     "get_gamification_store",

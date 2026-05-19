@@ -11,17 +11,17 @@ from typing import Any, TypedDict
 
 from deeptutor.config.settings import settings
 from deeptutor.services.config.provider_runtime import _should_use_hf_inference_router
+from deeptutor.services.hf_openai_compat import (
+    HF_OPENAI_COMPAT_ROUTER_BASE,
+    hf_hub_token_from_env,
+    normalize_hf_openai_compat_base_url,
+)
 from deeptutor.services.provider_registry import (
     PROVIDERS,
     canonical_provider_name,
     find_by_model,
     find_by_name,
     find_gateway,
-)
-from deeptutor.services.hf_openai_compat import (
-    HF_OPENAI_COMPAT_ROUTER_BASE,
-    hf_hub_token_from_env,
-    normalize_hf_openai_compat_base_url,
 )
 
 from .capabilities import supports_response_format

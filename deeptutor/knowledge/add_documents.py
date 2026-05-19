@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 
-from deeptutor.services.rag.factory import DEFAULT_PROVIDER
+from deeptutor.services.rag.factory import DEFAULT_PROVIDER, normalize_provider_name
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.index_versioning import list_kb_versions
 from deeptutor.services.rag.service import RAGService
@@ -53,20 +53,22 @@ class DocumentAdder:
         has_llamaindex_index = any(
             bool(version.get("ready")) for version in list_kb_versions(self.kb_dir)
         )
+        lc_dir = self.kb_dir / "_langchain_faiss"
+        lc_ready = lc_dir.is_dir() and any(lc_dir.iterdir())
 
-        if not has_llamaindex_index and self.legacy_rag_storage_dir.exists():
-            raise ValueError(
-                f"Knowledge base '{kb_name}' uses legacy index format and requires reindex before incremental add"
-            )
+        self.rag_provider = normalize_provider_name(rag_provider)
 
-        if not has_llamaindex_index:
-            raise ValueError(f"Knowledge base not initialized (llamaindex): {kb_name}")
+        if self.rag_provider == "langchain":
+            if not lc_ready:
+                raise ValueError(f"Knowledge base not initialized (langchain): {kb_name}")
+        else:
+            if not has_llamaindex_index and self.legacy_rag_storage_dir.exists():
+                raise ValueError(
+                    f"Knowledge base '{kb_name}' uses legacy index format and requires reindex before incremental add"
+                )
 
-        if rag_provider and rag_provider != DEFAULT_PROVIDER:
-            logger.warning(
-                f"Requested provider '{rag_provider}' ignored. Using '{DEFAULT_PROVIDER}' for consistency."
-            )
-
+            if not has_llamaindex_index:
+                raise ValueError(f"Knowledge base not initialized (llamaindex): {kb_name}")
         self.api_key = api_key
         self.base_url = base_url
         self.progress_tracker = progress_tracker
@@ -130,9 +132,10 @@ class DocumentAdder:
         if not new_files:
             return []
 
-        rag_service = RAGService(kb_base_dir=str(self.base_dir), provider=DEFAULT_PROVIDER)
+        rag_service = RAGService(kb_base_dir=str(self.base_dir), pipeline_name=self.rag_provider)
         processed_files: list[Path] = []
         total_files = len(new_files)
+        label = "LangChain" if self.rag_provider == "langchain" else "LlamaIndex"
 
         for idx, doc_file in enumerate(new_files, 1):
             try:
@@ -141,7 +144,7 @@ class DocumentAdder:
 
                     self.progress_tracker.update(
                         ProgressStage.PROCESSING_FILE,
-                        f"Indexing (LlamaIndex) {doc_file.name}",
+                        f"Indexing ({label}) {doc_file.name}",
                         current=idx,
                         total=total_files,
                     )
@@ -150,7 +153,7 @@ class DocumentAdder:
                 if success:
                     processed_files.append(doc_file)
                     self._record_successful_hash(doc_file)
-                    logger.info(f"Processed (LlamaIndex): {doc_file.name}")
+                    logger.info(f"Processed ({label}): {doc_file.name}")
                 else:
                     logger.error(f"Failed to index: {doc_file.name}")
             except Exception as e:
@@ -191,7 +194,7 @@ class DocumentAdder:
             except Exception:
                 metadata = {}
 
-        metadata["rag_provider"] = DEFAULT_PROVIDER
+        metadata["rag_provider"] = self.rag_provider
         metadata["needs_reindex"] = False
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         metadata["last_updated"] = timestamp

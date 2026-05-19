@@ -15,6 +15,7 @@ from deeptutor.capabilities.chat import ChatCapability
 from deeptutor.capabilities.deep_question import DeepQuestionCapability
 from deeptutor.capabilities.deep_research import DeepResearchCapability
 from deeptutor.capabilities.deep_solve import DeepSolveCapability
+from deeptutor.capabilities.study_plan import StudyPlanCapability
 from deeptutor.capabilities.visualize import VisualizeCapability
 from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
@@ -615,6 +616,31 @@ async def test_deep_research_capability_requires_explicit_config_and_streams_tra
     assert tool_call_event.metadata["research_stage_card"] == "evidence"
     result_event = next(event for event in events if event.type == StreamEventType.RESULT)
     assert result_event.metadata["response"] == "Report about agent-native tutoring"
+
+
+@pytest.mark.asyncio
+async def test_study_plan_capability_builds_weekly_plan() -> None:
+    context = UnifiedContext(
+        user_message="backend software engineer",
+        active_capability="study_plan",
+        config_overrides={
+            "target_path": "backend software engineer",
+            "goals": ["ship reliable APIs", "prepare for interviews"],
+            "weekly_hours": 8,
+            "experience_level": "intermediate",
+        },
+    )
+    capability = StudyPlanCapability()
+    events = await _collect_events(lambda bus: capability.run(context, bus))
+
+    assert any(
+        event.type == StreamEventType.CONTENT and "Backend Software Engineer Track" in event.content
+        for event in events
+    )
+    result_event = next(event for event in events if event.type == StreamEventType.RESULT)
+    assert result_event.metadata["capability"] == "study_plan"
+    assert result_event.metadata["plan"]["plan_id"] == "backend_sde"
+    assert result_event.metadata["active_milestones"][0]["title"] == "Primary backend language"
 
 
 @pytest.mark.asyncio

@@ -27,6 +27,8 @@ class ProviderSpec:
     name: str
     keywords: tuple[str, ...]
     env_key: str
+    # Extra env var names to try when ``env_key`` is unset (Google AI aliases, etc.).
+    env_key_alternates: tuple[str, ...] = ()
     display_name: str = ""
 
     # Which provider implementation to use:
@@ -278,9 +280,14 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         name="gemini",
         keywords=("gemini",),
         env_key="GEMINI_API_KEY",
+        env_key_alternates=("GOOGLE_GENERATIVE_AI_API_KEY", "GOOGLE_API_KEY"),
         display_name="Gemini",
         backend="openai_compat",
         default_api_base="https://generativelanguage.googleapis.com/v1beta/openai/",
+        env_extras=(
+            ("GOOGLE_API_KEY", "{api_key}"),
+            ("GOOGLE_GENERATIVE_AI_API_KEY", "{api_key}"),
+        ),
     ),
     ProviderSpec(
         name="zhipu",

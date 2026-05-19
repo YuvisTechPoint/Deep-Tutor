@@ -24,10 +24,13 @@ from deeptutor.services.practice.bank import (
 from deeptutor.services.practice.cache import (
     cache_stats,
     drop_quiz,
+    get_cached_hint,
     get_quiz,
+    store_hint,
     store_quiz,
 )
 from deeptutor.services.practice.generator import generate_quiz
+from deeptutor.services.practice.hints import get_question_hint
 
 __all__ = [
     "CURRICULUM_TOPICS",
@@ -35,8 +38,11 @@ __all__ = [
     "cache_stats",
     "drop_quiz",
     "generate_quiz",
+    "get_cached_hint",
+    "get_question_hint",
     "get_quiz",
     "list_topics",
     "score_quiz_against",
+    "store_hint",
     "store_quiz",
 ]

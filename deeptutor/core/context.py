@@ -64,3 +64,23 @@ class UnifiedContext:
     memory_context: str = ""
     skills_context: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def content(self) -> str:
+        """Backward-compatible alias used by older capability wrappers."""
+
+        return self.user_message
+
+    @content.setter
+    def content(self, value: str) -> None:
+        self.user_message = value
+
+    @property
+    def history(self) -> list[dict[str, Any]]:
+        """Backward-compatible alias for OpenAI-style conversation history."""
+
+        return self.conversation_history
+
+    @history.setter
+    def history(self, value: list[dict[str, Any]]) -> None:
+        self.conversation_history = value

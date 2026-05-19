@@ -30,8 +30,9 @@ class _AsyncIterator:
 
 
 class _FakeResponse:
-    def __init__(self, status: int, json_data: dict[str, object]) -> None:
+    def __init__(self, status: int, json_data: dict[str, object], headers: dict[str, str] | None = None) -> None:
         self.status = status
+        self.headers = headers or {}
         self._json_data = json_data
         self.content = _AsyncIterator([])
 

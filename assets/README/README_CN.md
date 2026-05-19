@@ -124,7 +124,7 @@
 - **知识中枢** — 上传 PDF、Markdown、文本等构建 RAG 知识库；彩色笔记本整理洞见；题库回顾测验；自定义 Skill 塑造教学风格。文档主动驱动每次对话。
 - **持久记忆** — 勾勒学习画像：学过什么、如何学习、去向何方。全功能与 TutorBot 共享，越用越准。
 - **个人 TutorBot** — 非聊天机器人，而是自主导师。独立工作区、记忆、人格与技能；提醒、学新能力、随你成长。由 [nanobot](https://github.com/HKUDS/nanobot) 驱动。
-- **智能体原生 CLI** — 能力、知识库、会话、TutorBot 一条命令；Rich 给人看，JSON 给智能体。将根目录 [`SKILL.md`](../../SKILL.md) 交给工具型智能体即可自主操作。
+- **智能体原生 CLI** — 能力、知识库、会话、TutorBot 一条命令；Rich 给人看，JSON 给智能体。将根目录 [`SKILL.md`](../../docs/cli-skill.md) 交给工具型智能体即可自主操作。
 - **可选身份认证** — 本地默认关闭；公网托管时改两个环境变量即可要求登录。多用户支持 bcrypt 密码、JWT 会话、自助注册页与内置管理后台。可选用 **PocketBase** 承载认证与存储（OAuth 友好、并发更佳），作为可选侧车接入，无需改代码。
 
 ---
@@ -384,10 +384,10 @@ cp .env.example .env
 镜像发布在 [GHCR](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor)，支持 `linux/amd64` 与 `linux/arm64`。
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-固定版本可改 `docker-compose.ghcr.yml` 中的 tag：
+固定版本可改 `docker-compose.yml (profile ghcr)` 中的 tag：
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.3.4  # 或 :latest
@@ -484,7 +484,7 @@ devenv up
 <summary><b>开发模式（热重载）</b></summary>
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 `deeptutor/`、`deeptutor_cli/`、`scripts/`、`web/` 变更会即时反映。
@@ -706,7 +706,7 @@ deeptutor bot list                  # 查看当前所有导师实例
 
 DeepTutor 完全以 CLI 为一等公民：每一种能力、知识库、会话、记忆与 TutorBot 都能用一条命令触达，无需浏览器。CLI 既为人类提供 Rich 终端渲染，也为 AI 智能体与流水线提供结构化 JSON 输出。
 
-将项目根目录的 [`SKILL.md`](../../SKILL.md) 交给任意支持工具调用的智能体（[nanobot](https://github.com/HKUDS/nanobot)，或任何具备工具能力的 LLM），即可自主配置并操作 DeepTutor。
+将项目根目录的 [`SKILL.md`](../../docs/cli-skill.md) 交给任意支持工具调用的智能体（[nanobot](https://github.com/HKUDS/nanobot)，或任何具备工具能力的 LLM），即可自主配置并操作 DeepTutor。
 
 **单次执行** — 在终端直接运行任意能力：
 

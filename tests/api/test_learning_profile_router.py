@@ -29,6 +29,7 @@ def test_learning_profile_get_defaults(tmp_path, monkeypatch) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["goals"] == []
+    assert body["preparing_for"] == []
     assert body["target_path"] == ""
     assert body["weekly_hours"] is None
     assert body["updated_at"] is None
@@ -42,6 +43,7 @@ def test_learning_profile_put_roundtrip(tmp_path, monkeypatch) -> None:
 
     payload = {
         "goals": ["Exam prep"],
+        "preparing_for": ["Engineering"],
         "target_path": "Linear algebra → ML interviews",
         "weekly_hours": 6.5,
         "learning_styles": ["Hands-on practice"],
@@ -55,6 +57,7 @@ def test_learning_profile_put_roundtrip(tmp_path, monkeypatch) -> None:
         assert put.status_code == 200
         saved = put.json()
         assert saved["goals"] == ["Exam prep"]
+        assert saved["preparing_for"] == ["Engineering"]
         assert saved["weekly_hours"] == 6.5
         assert saved["updated_at"]
 

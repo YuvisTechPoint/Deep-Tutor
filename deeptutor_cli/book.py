@@ -1,7 +1,7 @@
 """``deeptutor book ...`` CLI commands for the new BookEngine.
 
 Currently exposes maintenance commands. (Authoring/reading still goes through
-the API + web frontend.)
+the API and mobile/CLI clients.)
 """
 
 from __future__ import annotations

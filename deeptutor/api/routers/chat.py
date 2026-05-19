@@ -12,10 +12,10 @@ from types import SimpleNamespace
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from deeptutor.agents.chat import ChatAgent, SessionManager
+from deeptutor.analytics.emit import emit_domain_event
+from deeptutor.api.routers.learning_profile import _load_raw as _load_learning_profile
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.llm.config import LLMConfig, get_llm_config
-from deeptutor.api.routers.learning_profile import _load_raw as _load_learning_profile
-from deeptutor.analytics.emit import emit_domain_event
 from deeptutor.services.model_router import (
     adjust_intent_with_learning_profile,
     detect_intent,

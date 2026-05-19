@@ -124,7 +124,7 @@
 - **Центр знаний** — RAG-базы, цветные блокноты, банк вопросов, пользовательские Skills.
 - **Постоянная память** — сводка прогресса и профиль ученика; общая с TutorBot.
 - **Персональные TutorBot** — не чат-боты: автономные репетиторы со своей памятью, личностью и навыками. [nanobot](https://github.com/HKUDS/nanobot).
-- **Агентно-нативный CLI** — возможности, KB, сессии, TutorBot одной командой; Rich и JSON. [`SKILL.md`](../../SKILL.md).
+- **Агентно-нативный CLI** — возможности, KB, сессии, TutorBot одной командой; Rich и JSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ---
 
@@ -330,10 +330,10 @@ cp .env.example .env
 Официальные образы публикуются в [GitHub Container Registry](https://github.com/HKUDS/DeepTutor/pkgs/container/deeptutor) для `linux/amd64` и `linux/arm64`.
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+docker compose --profile ghcr up -d
 ```
 
-Чтобы зафиксировать версию, измените тег образа в `docker-compose.ghcr.yml`:
+Чтобы зафиксировать версию, измените тег образа в `docker-compose.yml (profile ghcr)`:
 
 ```yaml
 image: ghcr.io/hkuds/deeptutor:1.0.0  # или :latest
@@ -418,7 +418,7 @@ POCKETBASE_ADMIN_PASSWORD=your-admin-password
 Подключите dev-override, чтобы смонтировать исходники и включить hot-reload для обоих сервисов:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+docker compose --profile dev up
 ```
 
 Изменения в `deeptutor/`, `deeptutor_cli/`, `scripts/` и `web/` применяются сразу.
@@ -438,7 +438,7 @@ FRONTEND_PORT=4000
 Затем перезапустите:
 
 ```bash
-docker compose up -d     # или docker compose -f docker-compose.ghcr.yml up -d
+docker compose up -d     # или docker compose --profile ghcr up -d
 ```
 
 </details>
@@ -614,7 +614,7 @@ deeptutor bot list
 <img src="../../assets/figs/cli-architecture.png" alt="CLI" width="800">
 </div>
 
-Без браузера: возможности, KB, сессии, память, TutorBot. Rich + JSON. [`SKILL.md`](../../SKILL.md).
+Без браузера: возможности, KB, сессии, память, TutorBot. Rich + JSON. [`SKILL.md`](../../docs/cli-skill.md).
 
 ```bash
 deeptutor run chat "Explain the Fourier transform" -t rag --kb textbook

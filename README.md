@@ -7,7 +7,6 @@
 **Developed by [YuvisTechPoint](https://github.com/YuvisTechPoint) (Yuvraj Prasad)**
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/HKUDS/DeepTutor?style=flat-square&color=brightgreen)](https://github.com/HKUDS/DeepTutor/releases)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.26962-b31b1b?style=flat-square&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2604.26962)
@@ -26,7 +25,7 @@
 
 DeepTutor is an advanced, agent-native intelligent tutoring platform developed by YuvisTechPoint that combines conversational AI with multi-agent reasoning to deliver personalized learning experiences. Built on a flexible two-layer plugin model (Tools and Capabilities), DeepTutor supports six distinct operational modes within a unified workspace, persistent memory systems, autonomous tutor agents (TutorBots), and comprehensive knowledge base management.
 
-The platform is designed for individual learners, educational institutions, and organizations seeking to deploy AI-driven tutoring at scale. All features are accessible through three entry points: a web-based interface, command-line interface (CLI), and Python SDK.
+The platform is designed for individual learners, educational institutions, and organizations seeking to deploy AI-driven tutoring at scale. Features are accessible through the **FastAPI backend**, **Flutter mobile app**, **command-line interface (CLI)**, and Python SDK.
 
 ---
 
@@ -62,9 +61,7 @@ All components are registered through discovery mechanisms and can be extended w
 ### Requirements
 
 - **Git** — for repository cloning
-- **Python 3.11+** — backend runtime
-- **Node.js 20.9+** — frontend runtime
-- **npm** — package manager
+- **Python 3.11+** — API runtime
 - **LLM API Key** — from providers like OpenAI, Anthropic, DeepSeek, or others
 - **Windows users** — Visual Studio Build Tools with C++ workload (if not already installed)
 
@@ -99,48 +96,63 @@ source .venv/bin/activate
 # Install dependencies
 python -m pip install -e ".[server]"
 
-cd web && npm install && cd ..
-
 # Configure environment
 cp .env.example .env
-# Edit .env with your LLM provider credentials
+# For a minimal local stack, use the "Local-first preset" at the end of .env.example
 ```
 
 **Option 3: Docker Deployment**
 
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
-# Access at http://localhost:3782
+cp .env.example .env   # configure keys first
+docker compose up -d                    # build locally
+# docker compose --profile ghcr up -d   # pre-built image
+# API at http://localhost:8001
 ```
 
 ### Configuration
 
-Edit `.env` with required variables:
+Edit `.env` (see the **Local-first preset** at the end of `.env.example` for Ollama):
 
 ```dotenv
-LLM_BINDING=openai
-LLM_MODEL=gpt-4o-mini
-LLM_API_KEY=sk-xxx
-LLM_HOST=https://api.openai.com/v1
+LLM_BINDING=ollama
+LLM_MODEL=llama3.2:3b-instruct
+LLM_API_KEY=sk-no-key-required
+LLM_HOST=http://localhost:11434/v1
 
-EMBEDDING_BINDING=openai
-EMBEDDING_MODEL=text-embedding-3-large
-EMBEDDING_API_KEY=sk-xxx
-EMBEDDING_HOST=https://api.openai.com/v1/embeddings
+EMBEDDING_BINDING=ollama
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_API_KEY=
+EMBEDDING_HOST=http://localhost:11434/api/embed
+EMBEDDING_DIMENSION=768
+EMBEDDING_SEND_DIMENSIONS=false
 ```
+
+To use a cloud provider instead, keep `.env.example` as your starting point and
+swap the LLM and embedding fields to the service you want.
+
+Recommended local setup:
+
+```bash
+ollama serve
+ollama pull llama3.2:3b-instruct
+ollama pull nomic-embed-text
+```
+
+Note on rate-limit fallbacks:
+
+- **LLM_RATE_LIMIT_FALLBACK_MODEL**: if your primary LLM hits provider rate or daily token limits, DeepTutor can retry with a smaller fallback model. Set `LLM_RATE_LIMIT_FALLBACK_MODEL` in `.env` (for example `llama-3.1-8b-instant`) to enable this behaviour.
+
 
 ### Launch Services
 
 ```bash
-# Automated startup
-python scripts/start_web.py
-
-# Or manual startup
-python -m deeptutor.api.run_server  # Backend on port 8001
-cd web && npm run dev -- -p 3782    # Frontend on port 3782
+python -m deeptutor.api.run_server   # API on port 8001
+# or
+deeptutor serve
 ```
 
-Access the web interface at `http://localhost:3782`.
+API docs: `http://localhost:8001/docs`. Flutter mobile app: see `deeptutor_mobile/README.md`.
 
 ---
 
@@ -197,11 +209,11 @@ Enable authentication for shared deployments:
 
 ```bash
 echo 'AUTH_ENABLED=true' >> .env
-python scripts/start_web.py
+python -m deeptutor.api.run_server
 ```
 
-1. Register the first account at `http://localhost:3782/register` (becomes admin)
-2. Navigate to `/admin/users` to provision additional accounts
+1. Register the first account via `POST /api/v1/auth/register` (becomes admin)
+2. Use admin API routes to provision additional accounts
 3. Assign resources and permissions to each user
 
 Admin capabilities include model management, knowledge base curation, skill assignment, and usage auditing.
@@ -210,16 +222,37 @@ Admin capabilities include model management, knowledge base curation, skill assi
 
 ## Documentation
 
-- **[Contributing Guide](CONTRIBUTING.md)** — Development setup and contribution workflow
-- **[arXiv Paper](https://arxiv.org/abs/2604.26962)** — Technical architecture and design principles
-- **[Environment Variables](README.md#configuration)** — Complete configuration reference
+All guides are in **[docs/](docs/)** — start with [docs/run.md](docs/run.md).
+
+| Guide | Description |
+|-------|-------------|
+| [docs/run.md](docs/run.md) | Setup, dev servers, LLM presets, troubleshooting |
+| [docs/agents.md](docs/agents.md) | Architecture (Tools + Capabilities) |
+| [docs/cli-skill.md](docs/cli-skill.md) | CLI reference for AI agents |
+| [docs/contributing.md](docs/contributing.md) | Contribution workflow |
+| [arXiv paper](https://arxiv.org/abs/2604.26962) | Technical architecture and design principles |
+
+## Root layout
+
+| File | Purpose |
+|------|---------|
+| `README.md` | This file |
+| `.env.example` | Environment template → copy to `.env` |
+| `docker-compose.yml` | Docker (profiles: `ghcr`, `dev`, `analytics`) |
+| `Dockerfile` | Image build for compose |
+| `deeptutor_mobile/` | Flutter Android client |
+| `requirements.txt` | Python deps (`pip install -r requirements.txt`) |
+| `pyproject.toml` | Python package metadata (`pip install -e ".[server]"`) |
+| `.gitignore` | Git ignore rules |
+| `.pre-commit-config.yaml` | Pre-commit hooks |
+| `LICENSE` | Apache 2.0 |
 
 ---
 
 ## Technology Stack
 
 - **Backend:** Python 3.11+, FastAPI, LlamaIndex, LiteLLM
-- **Frontend:** Next.js 16, React 19, TypeScript
+- **Mobile:** Flutter (Android)
 - **Agent Engine:** nanobot
 - **Database:** SQLite (default), optional PocketBase sidecar
 - **Containerization:** Docker, Docker Compose

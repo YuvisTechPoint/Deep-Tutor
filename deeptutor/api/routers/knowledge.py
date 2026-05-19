@@ -50,6 +50,7 @@ from deeptutor.multi_user.knowledge_access import (
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.rag.factory import DEFAULT_PROVIDER
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.service import RAGService
 from deeptutor.utils.document_validator import DocumentValidator
 from deeptutor.utils.error_utils import format_exception_message
 
@@ -348,8 +349,11 @@ def _task_log(task_id: str, message: str, level: str = "info") -> None:
 
 
 def _validate_registered_provider(raw_provider: str | None) -> str:
-    """Always return the canonical provider; field is kept as a stub."""
-    return DEFAULT_PROVIDER
+    """Return canonical pipeline id; 400 if LangChain is requested but not installed."""
+    try:
+        return RAGService.coerce_kb_provider(raw_provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _resolve_registered_kb_name(manager: KnowledgeBaseManager, kb_name: str | None) -> str:
@@ -511,7 +515,7 @@ async def run_upload_processing_task(
         kb_name: Knowledge base name
         base_dir: Base directory for knowledge bases
         uploaded_file_paths: List of file paths to process
-        rag_provider: RAG provider (ignored - we use the one from KB metadata)
+        rag_provider: Canonical pipeline id from KB metadata (``llamaindex`` or ``langchain``)
         folder_id: Optional folder ID for sync state update
     """
     task_manager = TaskIDManager.get_instance()
@@ -638,8 +642,6 @@ async def health_check():
 async def get_rag_providers():
     """Get list of available RAG providers."""
     try:
-        from deeptutor.services.rag.service import RAGService
-
         providers = RAGService.list_providers()
         return {"providers": providers}
     except Exception as e:
@@ -1217,9 +1219,17 @@ async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_
                 total=len(file_paths),
             )
 
-            from deeptutor.services.rag.service import RAGService
+            from deeptutor.knowledge.manager import KnowledgeBaseManager
 
-            rag_service = RAGService(kb_base_dir=str(base_path), provider=DEFAULT_PROVIDER)
+            mgr = KnowledgeBaseManager(base_dir=str(base_path))
+            mgr.config = mgr._load_config()
+            kb_entry = mgr.config.get("knowledge_bases", {}).get(kb_name) or {}
+            try:
+                kb_pipeline = RAGService.coerce_kb_provider(kb_entry.get("rag_provider"))
+            except ValueError as exc:
+                raise RuntimeError(str(exc)) from exc
+
+            rag_service = RAGService(kb_base_dir=str(base_path), pipeline_name=kb_pipeline)
 
             def _on_progress(batch_num: int, total_batches: int) -> None:
                 progress_tracker.update(

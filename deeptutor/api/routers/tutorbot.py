@@ -7,6 +7,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import uuid
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
@@ -17,6 +19,7 @@ from deeptutor.services.tutorbot.manager import (
     TutorBotInstance,
     mask_channel_secrets,
 )
+from deeptutor.tutorbot.providers.llm_errors import friendly_llm_error_message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,7 +44,7 @@ async def _get_start_lock(bot_id: str) -> asyncio.Lock:
 
 
 class CreateBotRequest(BaseModel):
-    bot_id: str
+    bot_id: str | None = None
     name: str | None = None
     description: str | None = None
     persona: str | None = None
@@ -72,6 +75,13 @@ class SoulCreateRequest(BaseModel):
 class SoulUpdateRequest(BaseModel):
     name: str | None = None
     content: str | None = None
+
+
+def _slugify_bot_id(name: str) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", (name or "bot").lower()).strip("-")[:48]
+    if not base:
+        base = "bot"
+    return f"{base}-{uuid.uuid4().hex[:6]}"
 
 
 # ── Soul template library (must be before /{bot_id} routes) ───
@@ -118,7 +128,10 @@ async def delete_soul(soul_id: str):
 
 @router.get("")
 async def list_bots():
-    return get_tutorbot_manager().list_bots()
+    bots = get_tutorbot_manager().list_bots()
+    for row in bots:
+        row.setdefault("id", row.get("bot_id"))
+    return bots
 
 
 @router.get("/recent")
@@ -165,6 +178,7 @@ async def list_channel_schemas():
 @router.post("")
 async def create_and_start_bot(payload: CreateBotRequest):
     mgr = get_tutorbot_manager()
+    bot_id = (payload.bot_id or "").strip() or _slugify_bot_id(payload.name or "bot")
     # Only fields the client actually sent are forwarded as overrides; this lets
     # users explicitly clear values (e.g. ``description=""``) while *omitted*
     # fields fall back to the on-disk config — preventing the historical bug
@@ -172,14 +186,17 @@ async def create_and_start_bot(payload: CreateBotRequest):
     overrides = payload.model_dump(exclude_unset=True, exclude={"bot_id"})
     if "llm_selection" in overrides:
         overrides["llm_selection"] = _validate_llm_selection_payload(overrides["llm_selection"])
-    config = mgr.merge_bot_config(payload.bot_id, overrides)
+    config = mgr.merge_bot_config(bot_id, overrides)
+    mgr.save_bot_config(bot_id, config, auto_start=False)
     try:
-        instance = await mgr.start_bot(payload.bot_id, config)
+        instance = await mgr.start_bot(bot_id, config)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     # Response is masked — secrets are only revealed via the explicit
     # GET /{bot_id}?include_secrets=true edit-form route.
-    return instance.to_dict(mask_secrets=True)
+    result = instance.to_dict(mask_secrets=True)
+    result["id"] = bot_id
+    return result
 
 
 def _stopped_bot_dict(
@@ -460,19 +477,49 @@ async def bot_chat_ws(ws: WebSocket, bot_id: str):
                 # leaving the bot to finish an expensive turn for nobody.
                 await _safe_send({"type": "thinking", "content": text})
 
+            streamed_nonempty = False
+
+            async def on_content_delta(chunk: str) -> None:
+                nonlocal streamed_nonempty
+                if not chunk:
+                    return
+                streamed_nonempty = True
+                await _safe_send({"type": "delta", "content": chunk})
+
             try:
-                response = await mgr.send_message(
+                response, reply_meta = await mgr.send_message(
                     bot_id,
                     content,
                     chat_id=data.get("chat_id", "web"),
                     on_progress=on_progress,
+                    on_content_delta=on_content_delta,
                 )
-                if not await _safe_send({"type": "content", "content": response}):
-                    break
+                text = (response or "").strip()
+                if reply_meta.get("llm_error"):
+                    if not await _safe_send(
+                        {
+                            "type": "error",
+                            "content": text or "Unknown error",
+                            "code": reply_meta.get("error_code", "llm_error"),
+                        }
+                    ):
+                        break
+                elif text and not streamed_nonempty:
+                    if not await _safe_send({"type": "content", "content": response}):
+                        break
+                elif text and streamed_nonempty:
+                    # Streaming already delivered the body; avoid duplicating a full bubble.
+                    pass
                 if not await _safe_send({"type": "done"}):
                     break
             except RuntimeError as exc:
-                if not await _safe_send({"type": "error", "content": str(exc)}):
+                if not await _safe_send(
+                    {
+                        "type": "error",
+                        "content": friendly_llm_error_message(str(exc)),
+                        "code": "runtime",
+                    }
+                ):
                     break
             except WebSocketDisconnect:
                 disconnected.set()

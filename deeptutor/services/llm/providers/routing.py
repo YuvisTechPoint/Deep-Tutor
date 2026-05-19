@@ -17,7 +17,8 @@ import logging
 from typing import Protocol, cast
 
 from ..config import LLMConfig
-from ..exceptions import LLMConfigError
+from ..exceptions import LLMConfigError, LLMRateLimitError
+from ..rate_limit_fallback import rate_limit_fallback_model
 from ..registry import register_provider
 from ..types import AsyncStreamGenerator, TutorResponse, TutorStreamChunk
 from ..utils import is_local_llm_server
@@ -162,11 +163,27 @@ class RoutingProvider(BaseLLMProvider):
 
             return str(await target(**call_kwargs))
 
-        text = await self.execute_with_retry(
-            _call,
-            max_retries=max_retries,
-            sleep=sleep,
-        )
+        fallback_primary = rate_limit_fallback_model(model)
+        effective_retries = 0 if fallback_primary else max_retries
+
+        try:
+            text = await self.execute_with_retry(
+                _call,
+                max_retries=effective_retries,
+                sleep=sleep,
+            )
+        except LLMRateLimitError:
+            fb = rate_limit_fallback_model(model)
+            if not fb:
+                raise
+            logger.warning(
+                "Primary model %r rate limited; retrying completion once with %r",
+                model,
+                fb,
+            )
+            call_kwargs["model"] = fb
+            text = await self.execute(_call)
+            model = fb
 
         return TutorResponse(
             content=str(text),
@@ -215,7 +232,9 @@ class RoutingProvider(BaseLLMProvider):
             stream_func = cloud_provider.stream
 
         async def _stream() -> AsyncStreamGenerator:
+            nonlocal model
             attempt = 0
+            used_rl_fallback = False
             while True:
                 attempt += 1
                 emitted_any = False
@@ -250,6 +269,22 @@ class RoutingProvider(BaseLLMProvider):
                     mapped = self._map_exception(exc)
                     if emitted_any:
                         raise mapped from exc
+
+                    fb = rate_limit_fallback_model(str(call_kwargs.get("model") or model))
+                    if (
+                        not used_rl_fallback
+                        and isinstance(mapped, LLMRateLimitError)
+                        and fb
+                    ):
+                        used_rl_fallback = True
+                        call_kwargs["model"] = fb
+                        model = fb
+                        attempt = 0
+                        logger.warning(
+                            "Primary stream model rate limited; retrying with fallback %r",
+                            fb,
+                        )
+                        continue
 
                     if attempt > max_retries + 1 or not self._should_retry_error(mapped):
                         raise mapped from exc

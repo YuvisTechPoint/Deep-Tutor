@@ -6,9 +6,9 @@ Endpoints:
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 
 class LearningProfile(BaseModel):
     goals: list[str] = Field(default_factory=list)
+    preparing_for: list[str] = Field(default_factory=list)
     target_path: str = ""
+    career_path_id: str = ""
+    domain_answers: dict[str, str | list[str]] = Field(default_factory=dict)
     weekly_hours: float | None = None
     learning_styles: list[str] = Field(default_factory=list)
     experience_level: str = ""
@@ -95,4 +98,10 @@ async def save_learning_profile(body: LearningProfile) -> LearningProfile:
             subject_id="primary",
             payload={"target_path": payload.get("target_path", "")},
         )
+    try:
+        from deeptutor.api.routers.career_refresh import schedule_career_refresh
+
+        schedule_career_refresh("learning_profile_updated")
+    except Exception:
+        pass
     return LearningProfile(**payload)

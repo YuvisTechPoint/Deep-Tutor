@@ -168,103 +168,6 @@ def check_backend_packages() -> tuple[bool, int, int]:
     return all_ok, installed, missing
 
 
-def check_frontend_packages(project_root: Path) -> tuple[bool, int, int]:
-    """Check frontend Node.js packages"""
-    print_header("Frontend Dependencies")
-
-    web_dir = project_root / "web"
-    node_modules = web_dir / "node_modules"
-    package_json = web_dir / "package.json"
-
-    installed = 0
-    missing = 0
-    all_ok = True
-
-    # Check npm
-    npm_path = shutil.which("npm")
-    if npm_path:
-        try:
-            result = subprocess.run(
-                ["npm", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            npm_version = result.stdout.strip()
-            print_success(f"npm available (v{npm_version})")
-        except Exception:
-            print_warning("npm found but version check failed")
-    else:
-        print_error("npm not found - Node.js is required for frontend")
-        all_ok = False
-
-    # Check node
-    node_path = shutil.which("node")
-    if node_path:
-        try:
-            result = subprocess.run(
-                ["node", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            node_version = result.stdout.strip()
-            print_success(f"Node.js available ({node_version})")
-        except Exception:
-            print_warning("Node.js found but version check failed")
-    else:
-        print_error("Node.js not found")
-        all_ok = False
-
-    # Check package.json exists
-    if not package_json.exists():
-        print_error(f"package.json not found: {package_json}")
-        return False, 0, 0
-
-    # Check node_modules
-    if not node_modules.exists():
-        print_error("node_modules directory does not exist")
-        print_info("Run 'npm install' in web/ directory to install dependencies")
-        return False, 0, 0
-
-    # Check key packages
-    key_packages = [
-        "next",
-        "react",
-        "react-dom",
-        "typescript",
-        "tailwindcss",
-        "@radix-ui/react-dialog",
-        "lucide-react",
-    ]
-
-    print_info("Checking key frontend packages...")
-
-    for pkg in key_packages:
-        pkg_dir = node_modules / pkg
-        if pkg_dir.exists():
-            # Try to get version from package.json
-            pkg_json = pkg_dir / "package.json"
-            version = ""
-            if pkg_json.exists():
-                try:
-                    import json
-
-                    with open(pkg_json) as f:
-                        data = json.load(f)
-                        version = f" (v{data.get('version', '?')})"
-                except Exception:
-                    pass
-            print_success(f"  ✓ {pkg}{version}")
-            installed += 1
-        else:
-            print_error(f"  ✗ {pkg} not installed")
-            missing += 1
-            all_ok = False
-
-    return all_ok, installed, missing
-
-
 def check_system_tools() -> bool:
     """Check system tools and utilities"""
     print_header("System Tools")
@@ -334,8 +237,8 @@ def check_env_file(project_root: Path) -> bool:
             "SEARCH_PROVIDER",
             "SEARCH_API_KEY",
             "SEARCH_BASE_URL",
-            "NEXT_PUBLIC_API_BASE_EXTERNAL",
-            "NEXT_PUBLIC_API_BASE",
+            "CORS_ORIGIN",
+            "CORS_ORIGINS",
             "DISABLE_SSL_VERIFY",
         ]
 
@@ -410,24 +313,11 @@ def main():
         )
         all_checks_passed = False
 
-    # 3. Frontend packages
-    frontend_ok, frontend_installed, frontend_missing = check_frontend_packages(project_root)
-    if frontend_ok:
-        summary.append(("Frontend Dependencies", f"✅ OK ({frontend_installed} packages)"))
-    else:
-        summary.append(
-            (
-                "Frontend Dependencies",
-                f"❌ {frontend_missing} missing, {frontend_installed} installed",
-            )
-        )
-        all_checks_passed = False
-
-    # 4. System tools
+    # 3. System tools
     check_system_tools()
     summary.append(("System Tools", "✅ Checked"))
 
-    # 5. Environment configuration
+    # 4. Environment configuration
     if check_env_file(project_root):
         summary.append(("Environment Config", "✅ .env exists"))
     else:
@@ -442,7 +332,7 @@ def main():
     print("")
     if all_checks_passed:
         print_success("All required dependencies are installed!")
-        print_info("You can start DeepTutor with: python scripts/start_web.py")
+        print_info("You can start DeepTutor with: python -m deeptutor.api.run_server")
     else:
         print_error("Some dependencies are missing!")
         print_info("Run: python scripts/start_tour.py")
